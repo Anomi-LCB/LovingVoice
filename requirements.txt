@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+google-cloud-speech
+google-cloud-texttospeech
+google-genai
+websockets
+python-dotenv

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LovingVoice - 실시간 AI 통역</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', 'Noto Sans KR', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .pulse-red { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+    <div id="setup_box" class="glass p-8 rounded-2xl shadow-2xl w-full max-w-md">
+        <h1 class="text-3xl font-bold mb-6 text-center text-blue-400">LovingVoice</h1>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">강연장 코드 (Room ID)</label>
+                <input type="text" id="room_id" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="예: 7777" value="7777">
+            </div>
+            <div id="speaker_pass_container">
+                <label class="block text-sm font-medium mb-1">🔐 강연자 비밀번호</label>
+                <input type="password" id="speaker_pass" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="입장 시 필수">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">내 언어 (수신용)</label>
+                <select id="lang_select" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none">
+                    <option value="ko-KR">한국어</option>
+                    <option value="en-US">English</option>
+                    <option value="zh-TW">繁體中文</option>
+                    <option value="zh-CN">简体中文</option>
+                    <option value="ja-JP">日本語</option>
+                    <option value="vi-VN">Tiếng Việt (베트남어)</option>
+                    <option value="ta-IN">தமிழ் (타밀어)</option>
+                    <option value="ne-NP">नेपाली (네팔어)</option>
+                    <option value="mn-MN">Монгол (몽골어)</option>
+                    <option value="my-MM">မြန်မာ (버마어)</option>
+                    <option value="km-KH">ខ្មែរ (크메르어)</option>
+                </select>
+            </div>
+            <div class="flex gap-3 pt-2">
+                <button onclick="startSpeaker()" class="flex-1 bg-blue-600 hover:bg-blue-500 transition-colors font-bold py-3 rounded-xl shadow-lg">강연 시작</button>
+                <button onclick="startAudience()" class="flex-1 bg-slate-700 hover:bg-slate-600 transition-colors font-bold py-3 rounded-xl shadow-lg">청중 입장</button>
+            </div>
+            <div id="voice_mode_box">
+                <label class="block text-sm font-medium mb-1 mt-4">🎙️ 음성 모드 (강연자 전용)</label>
+                <select id="voice_mode" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none text-sm">
+                    <option value="speed">⚡ 속도 우선 — Google Cloud TTS (~0.3초, 빠르고 안정적)</option>
+                    <option value="quality">✨ 품질 우선 — Gemini AI Voice (~2초, 자연스러운 원어민 톤)</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div id="active_ui" class="hidden w-full max-w-4xl space-y-6">
+        <div class="flex items-center justify-between glass p-4 rounded-xl">
+            <div class="flex items-center gap-3">
+                <div id="status_dot" class="w-3 h-3 rounded-full bg-gray-500"></div>
+                <span id="status_text" class="text-sm font-medium">연결 준비 중...</span>
+            </div>
+            <div id="room_display" class="text-sm bg-slate-800 px-3 py-1 rounded-full border border-slate-700">ROOM: -</div>
+        </div>
+
+        <div class="glass p-4 rounded-2xl h-[400px] md:h-[500px] flex flex-col w-full text-left overflow-hidden">
+            <!-- 히스토리 영역 (채팅처럼 이전 대화 기록) -->
+            <div id="history_area" class="flex-1 overflow-y-auto space-y-3 pb-4 opacity-70 text-xl md:text-2xl font-medium px-4 scroll-smooth">
+            </div>
+            <!-- 활성 문장 (현재 대화 중인 가장 크고 밝은 텍스트) -->
+            <div id="subtitle_area" class="text-2xl md:text-4xl font-bold leading-tight break-keep pt-4 border-t border-slate-700 px-4 min-h-[80px] text-blue-100">
+                강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.
+            </div>
+        </div>
+
+        <div id="speaker_controls" class="hidden glass p-4 rounded-xl flex justify-center">
+            <button onclick="sendTestAudio()" class="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-lg font-bold transition-all flex items-center gap-2">
+                테스트 알림 발송
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let audioCtx;
+        let workletNode;
+
+        function setStatus(state, text) {
+            const dot = document.getElementById('status_dot');
+            const lbl = document.getElementById('status_text');
+            lbl.innerText = text;
+            dot.className = 'w-3 h-3 rounded-full ' + (state === 'online' ? 'bg-green-500' : (state === 'error' ? 'bg-red-500 pulse-red' : 'bg-gray-500'));
+        }
+
+        function showActiveUI(isSpeaker) {
+            document.getElementById('setup_box').classList.add('hidden');
+            document.getElementById('active_ui').classList.remove('hidden');
+            if (isSpeaker) document.getElementById('speaker_controls').classList.remove('hidden');
+            document.getElementById('room_display').innerText = 'ROOM: ' + document.getElementById('room_id').value;
+        }
+
+        async function startSpeaker() {
+            const room = document.getElementById('room_id').value;
+            if (!room) return alert('방 코드를 입력하세요.');
+            showActiveUI(true);
+            setStatus('offline', '마이크 권한 요청 중...');
+
+            try {
+                const pass = document.getElementById('speaker_pass').value;
+                if (!pass) return alert('강연자 비밀번호를 입력해주세요.');
+
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                
+                await audioCtx.audioWorklet.addModule('/recorder-worklet.js');
+                const source = audioCtx.createMediaStreamSource(stream);
+                workletNode = new AudioWorkletNode(audioCtx, 'recorder-processor');
+                
+                const voiceMode = document.getElementById('voice_mode').value;
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(`${protocol}//${window.location.host}/ws/speaker/${room}?password=${pass}&voice_mode=${voiceMode}`);
+                
+                ws.onopen = () => setStatus('online', '실시간 방송 중 (MIC ON)');
+                ws.onclose = (e) => {
+                    if (e.code === 4001) {
+                        alert('❌ 강연자 비밀번호가 틀렸습니다.');
+                        location.reload();
+                    } else if (e.code === 4002) {
+                        alert('❌ 이미 강연자가 가득 찼습니다 (최대 2명).');
+                        location.reload();
+                    } else {
+                        setStatus('offline', '연결 종료됨');
+                    }
+                };
+                
+                workletNode.port.onmessage = (e) => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(e.data.buffer);
+                    }
+                };
+
+                source.connect(workletNode);
+                workletNode.connect(audioCtx.destination);
+            } catch (err) {
+                console.error('AudioWorklet Error:', err);
+                setStatus('error', '마이크 설정 실패 (' + err.message + ')');
+            }
+        }
+
+        function startAudience() {
+            const room = document.getElementById('room_id').value;
+            const lang = document.getElementById('lang_select').value;
+            if (!room) return alert('방 코드를 입력하세요.');
+            showActiveUI(false);
+            setStatus('offline', '통역 서버 접속 중...');
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/audience/${room}/${lang}`);
+
+            let currentValidSubtitle = "";
+
+            ws.onopen = () => setStatus('online', '통역 수신 중 (' + lang + ')');
+            ws.onmessage = async (event) => {
+                const data = JSON.parse(event.data);
+                const area = document.getElementById('subtitle_area');
+                const historyBox = document.getElementById('history_area');
+                
+                function pushToHistory(text) {
+                    if (!text || text.includes("통역 자막이") || text.includes("Speaking")) return;
+                    const p = document.createElement('p');
+                    p.innerText = text;
+                    historyBox.appendChild(p);
+                    historyBox.scrollTop = historyBox.scrollHeight;
+                }
+
+                if (data.type === 'transcript') {
+                    if (lang !== 'ko-KR') {
+                        if (currentValidSubtitle) {
+                            pushToHistory(currentValidSubtitle);
+                            currentValidSubtitle = "";
+                        }
+                        area.innerText = "🗣️ ... (Speaking) ...";
+                        area.classList.add('italic', 'text-blue-300');
+                    } else {
+                        if (currentValidSubtitle) {
+                            pushToHistory(currentValidSubtitle);
+                            currentValidSubtitle = ""; 
+                        }
+                        area.innerText = data.text;
+                        area.classList.remove('italic', 'text-blue-300');
+                        if (!data.is_final) area.classList.add('italic', 'text-blue-300');
+                    }
+                } else if (data.type === 'translation') {
+                    if (currentValidSubtitle && currentValidSubtitle !== data.text) {
+                        pushToHistory(currentValidSubtitle);
+                    }
+                    currentValidSubtitle = data.text;
+                    area.innerText = data.text;
+                    area.classList.remove('italic', 'text-blue-300');
+                    
+                    // Phase 1에서는 audio가 빈 문자열로 옴 (자막만 먼저 도착)
+                    if (data.audio) {
+                        try {
+                            const audioUrl = `data:audio/wav;base64,${data.audio}`;
+                            const audio = new Audio(audioUrl);
+                            audio.play().catch(e => console.error('Audio play failed:', e));
+                        } catch(e) {}
+                    }
+                } else if (data.type === 'audio') {
+                    // Phase 2: 음성만 별도 도착 → 즉시 재생
+                    if (data.audio) {
+                        try {
+                            const audioUrl = `data:audio/wav;base64,${data.audio}`;
+                            const audio = new Audio(audioUrl);
+                            audio.play().catch(e => console.error('Audio play failed:', e));
+                        } catch(e) {}
+                    }
+                }
+            };
+            ws.onclose = () => setStatus('offline', '연결 끊김');
+        }
+
+        function sendTestAudio() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'test_audio' }));
+            }
+        }
+    </script>
+</body>
+</html>
