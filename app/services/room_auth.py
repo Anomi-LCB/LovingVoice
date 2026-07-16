@@ -18,24 +18,11 @@ class RoomTokenManager:
         self.ttl_seconds = ttl_seconds
         self.rooms: dict[str, dict[str, bytes | int]] = {}
 
-    @staticmethod
-    def create_room_id() -> str:
-        """Return an easy-to-share six digit room code."""
-        return f"{secrets.randbelow(900_000) + 100_000:06d}"
-
-    @staticmethod
-    def create_room_password(length: int = 8) -> str:
-        """Generate a readable password without ambiguous characters."""
-        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        return "".join(secrets.choice(alphabet) for _ in range(length))
-
-    def create_room(self) -> dict[str, str | int]:
-        """Create a room and retain only a salted password digest."""
+    def create_room(self, room_id: str, password: str) -> dict[str, str | int]:
+        """Register a user-named room and retain only its password digest."""
         self._prune_expired_rooms()
-        room_id = self.create_room_id()
-        while room_id in self.rooms:
-            room_id = self.create_room_id()
-        password = self.create_room_password()
+        if room_id in self.rooms:
+            raise ValueError("Room already exists")
         salt = secrets.token_bytes(16)
         password_digest = hashlib.pbkdf2_hmac(
             "sha256", password.encode("utf-8"), salt, 200_000
@@ -48,7 +35,6 @@ class RoomTokenManager:
         }
         return {
             "room_id": room_id,
-            "room_password": password,
             "speaker_token": self.issue(room_id, expires_at=expires_at),
             "expires_in_seconds": self.ttl_seconds,
         }
@@ -102,7 +88,7 @@ class RoomTokenManager:
             return False
         supplied_digest = hashlib.pbkdf2_hmac(
             "sha256",
-            password.strip().upper().encode("utf-8"),
+            password.strip().encode("utf-8"),
             room["salt"],
             200_000,
         )

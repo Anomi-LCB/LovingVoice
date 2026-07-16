@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LovingVoice - 실시간 AI 통역</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/app.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -18,17 +19,14 @@
         <h1 class="text-3xl font-bold mb-6 text-center text-blue-400">LovingVoice</h1>
         <div class="space-y-4">
             <div>
-                <label class="block text-sm font-medium mb-1">강연장 코드 (Room ID)</label>
-                <div class="flex gap-2">
-                    <input type="text" id="room_id" class="min-w-0 flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="예: 7777" value="7777">
-                    <button type="button" onclick="createRoom(this)" class="whitespace-nowrap bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded-lg text-sm font-bold">새 방 만들기</button>
-                </div>
-                <p id="room_hint" class="mt-2 text-xs text-slate-400">기존 코드를 입력하거나 안전한 새 방을 만드세요.</p>
+                <label class="block text-sm font-medium mb-1">방 이름</label>
+                <input type="text" id="room_id" maxlength="40" autocomplete="off" spellcheck="false" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="예: 주일예배">
+                <p id="room_hint" class="mt-2 text-xs text-slate-400">강연자가 사용할 방 이름을 직접 입력하세요.</p>
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">방 비밀번호</label>
-                <input type="text" id="room_password" maxlength="8" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 uppercase tracking-widest focus:ring-2 focus:ring-blue-500 outline-none" placeholder="방 생성 시 자동으로 만들어집니다">
-                <p class="mt-2 text-xs text-slate-400">청중은 방 코드와 이 비밀번호가 모두 필요합니다.</p>
+                <input type="text" id="room_password" minlength="4" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="직접 입력 (4자 이상)">
+                <p class="mt-2 text-xs text-slate-400">청중은 방 이름과 이 비밀번호로 입장합니다.</p>
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">내 언어 (수신용)</label>
@@ -47,7 +45,7 @@
                 </select>
             </div>
             <div class="flex gap-3 pt-2">
-                <button onclick="startSpeaker()" class="flex-1 bg-blue-600 hover:bg-blue-500 transition-colors font-bold py-3 rounded-xl shadow-lg">강연 시작</button>
+                <button id="speaker_start_button" onclick="startSpeaker()" class="flex-1 bg-blue-600 hover:bg-blue-500 transition-colors font-bold py-3 rounded-xl shadow-lg">강연 시작</button>
                 <button onclick="startAudience()" class="flex-1 bg-slate-700 hover:bg-slate-600 transition-colors font-bold py-3 rounded-xl shadow-lg">청중 입장</button>
             </div>
             <input type="hidden" id="voice_mode" value="openai">
@@ -62,7 +60,7 @@
             </div>
             <div class="flex flex-wrap items-center justify-end gap-2">
                 <button onclick="copyAudienceLink()" class="text-sm bg-blue-950 hover:bg-blue-900 px-3 py-1.5 rounded-full border border-blue-800">초대 정보 복사</button>
-                <div id="room_display" class="text-sm bg-slate-800 px-3 py-1 rounded-full border border-slate-700">ROOM: -</div>
+                <div id="room_display" class="text-sm bg-slate-800 px-3 py-1 rounded-full border border-slate-700">방: -</div>
                 <button onclick="leaveSession()" class="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-full border border-slate-700">나가기</button>
             </div>
         </div>
@@ -137,45 +135,31 @@
             document.getElementById('active_ui').classList.remove('hidden');
             if (isSpeaker) document.getElementById('speaker_controls').classList.remove('hidden');
             currentRoom = cleanRoomId(document.getElementById('room_id').value);
-            document.getElementById('room_display').innerText = 'ROOM: ' + currentRoom;
+            document.getElementById('room_display').innerText = '방: ' + currentRoom;
         }
 
         function cleanRoomId(value) {
-            return value.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
-        }
-
-        async function createRoom(button) {
-            if (button) button.disabled = true;
-            try {
-                const response = await fetch('/api/rooms', { method: 'POST' });
-                if (!response.ok) throw new Error('방을 만들 수 없습니다.');
-                const room = await response.json();
-                document.getElementById('room_id').value = room.room_id;
-                document.getElementById('room_password').value = room.room_password;
-                sessionStorage.setItem(`lovingvoice:host-token:${room.room_id}`, room.speaker_token);
-                sessionStorage.setItem(`lovingvoice:room-password:${room.room_id}`, room.room_password);
-                document.getElementById('room_hint').innerText = `방 ${room.room_id}이 준비되었습니다. 방 코드와 비밀번호를 함께 공유하세요.`;
-                history.replaceState({}, '', `/?room=${encodeURIComponent(room.room_id)}`);
-            } catch (error) {
-                alert(error.message || '새 방 생성에 실패했습니다.');
-            } finally {
-                if (button) button.disabled = false;
-            }
+            return value
+                .trim()
+                .replace(/\s+/g, '-')
+                .replace(/[^\p{L}\p{N}_-]/gu, '')
+                .slice(0, 40);
         }
 
         async function copyAudienceLink() {
             const room = currentRoom || cleanRoomId(document.getElementById('room_id').value);
-            if (!room) return alert('방 코드가 없습니다.');
+            if (!room) return alert('방 이름이 없습니다.');
             const url = new URL(window.location.href);
             url.search = '';
             url.searchParams.set('room', room);
-            const roomPassword = document.getElementById('room_password').value.trim().toUpperCase();
+            url.searchParams.set('mode', 'audience');
+            const roomPassword = document.getElementById('room_password').value.trim();
             const invitation = roomPassword
-                ? `LovingVoice 초대\n${url}\n방 비밀번호: ${roomPassword}`
+                ? `LovingVoice 청중 초대\n방 이름: ${room}\n방 비밀번호: ${roomPassword}\n입장 링크: ${url}`
                 : url.toString();
             try {
                 await navigator.clipboard.writeText(invitation);
-                setStatus('online', '방 코드와 비밀번호를 포함한 초대 정보를 복사했습니다.');
+                setStatus('online', '방 이름과 비밀번호를 포함한 청중 초대 정보를 복사했습니다.');
             } catch (error) {
                 prompt('아래 초대 정보를 복사하세요.', invitation);
             }
@@ -397,11 +381,30 @@
 
         async function startSpeaker() {
             const room = cleanRoomId(document.getElementById('room_id').value);
-            if (!room) return alert('방 코드를 입력하세요.');
+            const password = document.getElementById('room_password').value.trim();
+            if (room.length < 2) return alert('방 이름을 2자 이상 입력하세요.');
+            if (password.length < 4 || password.length > 32) return alert('방 비밀번호를 4~32자로 입력하세요.');
 
             try {
-                const token = sessionStorage.getItem(`lovingvoice:host-token:${room}`) || '';
-                if (!token) return alert('먼저 새 방을 만들어주세요. 강연자는 생성된 방에서만 시작할 수 있습니다.');
+                let token = sessionStorage.getItem(`lovingvoice:host-token:${room}`) || '';
+                const savedPassword = sessionStorage.getItem(`lovingvoice:room-password:${room}`) || '';
+                if (token && savedPassword && savedPassword !== password) {
+                    return alert('이 방을 시작할 때 설정한 비밀번호를 입력하세요.');
+                }
+                if (!token) {
+                    const response = await fetch('/api/rooms', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ room_id: room, room_password: password })
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        throw new Error(payload.detail || '방을 시작할 수 없습니다.');
+                    }
+                    token = payload.speaker_token;
+                    sessionStorage.setItem(`lovingvoice:host-token:${room}`, token);
+                    sessionStorage.setItem(`lovingvoice:room-password:${room}`, password);
+                }
                 isLeaving = false;
                 speakerAuthenticated = false;
                 showActiveUI(true);
@@ -438,7 +441,7 @@
                     speakerAuthenticated = false;
                     if (e.code === 4001) {
                         sessionStorage.removeItem(`lovingvoice:host-token:${room}`);
-                        alert('강연자 인증이 만료되었습니다. 새 방을 다시 만들어주세요.');
+                        alert('강연자 인증이 만료되었습니다. 같은 방 이름과 비밀번호로 다시 시작하세요.');
                         leaveSession();
                     } else {
                         setStatus('offline', '연결 종료됨');
@@ -464,9 +467,10 @@
         function startAudience() {
             const room = cleanRoomId(document.getElementById('room_id').value);
             const lang = document.getElementById('lang_select').value;
-            const password = document.getElementById('room_password').value.trim().toUpperCase();
-            if (!room) return alert('방 코드를 입력하세요.');
+            const password = document.getElementById('room_password').value.trim();
+            if (!room) return alert('방 이름을 입력하세요.');
             if (!password) return alert('방을 만든 강연자에게 받은 방 비밀번호를 입력하세요.');
+            sessionStorage.setItem(`lovingvoice:room-password:${room}`, password);
             isLeaving = false;
             showActiveUI(false);
             ensurePlaybackContext();
@@ -655,7 +659,7 @@
                 clearInterval(heartbeatTimer);
                 if (isLeaving || !audienceConfig) return;
                 if (event.code === 4001) {
-                    alert('방 코드 또는 비밀번호가 올바르지 않습니다.');
+                    alert('방 이름 또는 비밀번호가 올바르지 않습니다.');
                     audienceConfig = null;
                     leaveSession();
                     return;
@@ -676,11 +680,17 @@
             const params = new URLSearchParams(window.location.search);
             const room = cleanRoomId(params.get('room') || '');
             const language = params.get('lang');
+            const audienceMode = params.get('mode') === 'audience';
             if (room) {
                 document.getElementById('room_id').value = room;
-                document.getElementById('room_hint').innerText = `초대받은 방 ${room}에 입장할 수 있습니다.`;
+                document.getElementById('room_hint').innerText = `초대받은 방 '${room}'에 청중으로 입장할 수 있습니다.`;
                 const savedPassword = sessionStorage.getItem(`lovingvoice:room-password:${room}`);
                 if (savedPassword) document.getElementById('room_password').value = savedPassword;
+            }
+            if (audienceMode) {
+                document.getElementById('speaker_start_button').classList.add('hidden');
+                document.getElementById('room_id').readOnly = Boolean(room);
+                document.getElementById('room_password').focus();
             }
             if (language && [...document.getElementById('lang_select').options].some(option => option.value === language)) {
                 document.getElementById('lang_select').value = language;

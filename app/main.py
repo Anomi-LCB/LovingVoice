@@ -1,9 +1,12 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse
+from pydantic import BaseModel
 import logging
 import os
 import asyncio
+import re
 import uuid
+from urllib.parse import quote
 from dotenv import load_dotenv
 from app.services.speech_engine import LovingVoiceEngine
 from app.services.connection import ConnectionManager
@@ -84,13 +87,46 @@ async def room_status(room_id: str):
     return status
 
 
+class RoomCreateRequest(BaseModel):
+    room_id: str
+    room_password: str
+
+
+def normalize_room_id(value: str) -> str:
+    normalized = re.sub(r"\s+", "-", value.strip())
+    normalized = "".join(
+        character
+        for character in normalized
+        if character.isalnum() or character in "-_"
+    )
+    if not 2 <= len(normalized) <= 40:
+        raise HTTPException(
+            status_code=422,
+            detail="방 이름은 문자·숫자·하이픈으로 2~40자 이내여야 합니다.",
+        )
+    return normalized
+
+
 @app.post("/api/rooms")
-async def create_room():
-    """Create a room password for audiences and a private host token."""
-    room = room_tokens.create_room()
+async def create_room(request: RoomCreateRequest):
+    """Register a user-selected room name/password and issue a host token."""
+    room_id = normalize_room_id(request.room_id)
+    room_password = request.room_password.strip()
+    if not 4 <= len(room_password) <= 32:
+        raise HTTPException(
+            status_code=422,
+            detail="방 비밀번호는 4~32자로 입력하세요.",
+        )
+    try:
+        room = room_tokens.create_room(room_id, room_password)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=409,
+            detail="이미 사용 중인 방 이름입니다.",
+        ) from error
     return {
         **room,
-        "audience_path": f"/?room={room['room_id']}",
+        "audience_path": f"/?room={quote(room_id)}&mode=audience",
     }
 
 import queue
