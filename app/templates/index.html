@@ -1,20 +1,84 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LovingVoice - 실시간 AI 통역</title>
     <link rel="icon" href="data:,">
+    <script>
+        try {
+            if (localStorage.getItem('lovingvoice:theme') === 'dark') {
+                document.documentElement.dataset.theme = 'dark';
+            }
+        } catch (error) {}
+    </script>
     <link rel="stylesheet" href="/app.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', 'Noto Sans KR', sans-serif; background-color: #0f172a; color: #f8fafc; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        html { color-scheme: light; }
+        html[data-theme="dark"] { color-scheme: dark; }
+        body {
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            background-color: #f4f7fb;
+            color: #172033;
+            transition: background-color 180ms ease, color 180ms ease;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(15, 23, 42, 0.12);
+        }
+        html[data-theme="dark"] body { background-color: #0f172a; color: #f8fafc; }
+        html[data-theme="dark"] .glass { background: rgba(30, 41, 59, 0.7); border-color: rgba(255, 255, 255, 0.1); }
+
+        html[data-theme="light"] .bg-slate-800 { background-color: #ffffff; }
+        html[data-theme="light"] .bg-slate-700 { background-color: #e2e8f0; color: #1e293b; }
+        html[data-theme="light"] .hover\:bg-slate-600:hover { background-color: #cbd5e1; }
+        html[data-theme="light"] .hover\:bg-slate-700:hover { background-color: #e2e8f0; }
+        html[data-theme="light"] .bg-blue-950 { background-color: #eff6ff; color: #1d4ed8; }
+        html[data-theme="light"] .hover\:bg-blue-900:hover { background-color: #dbeafe; }
+        html[data-theme="light"] .border-slate-700 { border-color: #cbd5e1; }
+        html[data-theme="light"] .border-slate-600 { border-color: #94a3b8; }
+        html[data-theme="light"] .border-blue-800 { border-color: #bfdbfe; }
+        html[data-theme="light"] .text-slate-400 { color: #64748b; }
+        html[data-theme="light"] .text-blue-400 { color: #2563eb; }
+        html[data-theme="light"] .text-blue-300 { color: #2563eb; }
+        html[data-theme="light"] .text-blue-100 { color: #1e3a8a; }
+        html[data-theme="light"] input,
+        html[data-theme="light"] select { color: #172033; }
+        html[data-theme="light"] input::placeholder { color: #94a3b8; }
+
+        .theme-toggle {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 50;
+            min-width: 92px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            border: 1px solid #cbd5e1;
+            background: rgba(255, 255, 255, 0.9);
+            color: #334155;
+            font-size: 0.875rem;
+            font-weight: 700;
+            box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+            transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+        }
+        .theme-toggle:hover { background: #f1f5f9; }
+        .theme-toggle:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+        html[data-theme="dark"] .theme-toggle {
+            border-color: #475569;
+            background: rgba(30, 41, 59, 0.92);
+            color: #f8fafc;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+        }
+        html[data-theme="dark"] .theme-toggle:hover { background: #334155; }
         .pulse-red { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4">
+    <button id="theme_toggle" type="button" class="theme-toggle" onclick="toggleTheme()" aria-pressed="false">다크 모드</button>
     <div id="setup_box" class="glass p-8 rounded-2xl shadow-2xl w-full max-w-md">
         <h1 class="text-3xl font-bold mb-6 text-center text-blue-400">LovingVoice</h1>
         <div class="space-y-4">
@@ -123,6 +187,28 @@
         let downloadRecordingOnStop = false;
         let recordingSaved = false;
         const COMPLETED_CAPTION_HOLD_MS = 2200;
+
+        function applyTheme(theme, { persist = true } = {}) {
+            const nextTheme = theme === 'dark' ? 'dark' : 'light';
+            document.documentElement.dataset.theme = nextTheme;
+            const toggle = document.getElementById('theme_toggle');
+            if (toggle) {
+                const isDark = nextTheme === 'dark';
+                toggle.innerText = isDark ? '라이트 모드' : '다크 모드';
+                toggle.setAttribute('aria-pressed', String(isDark));
+                toggle.setAttribute('aria-label', isDark ? '라이트 모드로 전환' : '다크 모드로 전환');
+            }
+            if (persist) {
+                try {
+                    localStorage.setItem('lovingvoice:theme', nextTheme);
+                } catch (error) {}
+            }
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.dataset.theme;
+            applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        }
 
         function setStatus(state, text) {
             const dot = document.getElementById('status_dot');
@@ -767,6 +853,7 @@
         }
 
         window.addEventListener('DOMContentLoaded', () => {
+            applyTheme(document.documentElement.dataset.theme, { persist: false });
             const params = new URLSearchParams(window.location.search);
             const room = cleanRoomId(params.get('room') || '');
             const language = params.get('lang');
