@@ -308,7 +308,7 @@
 
         <section id="audience_setup_screen" class="screen setup-screen hidden">
             <header class="screen-header audience-card">
-                <button type="button" class="back-button" onclick="returnFromAudienceSetup()">← 처음으로</button>
+                <button id="audience_home_button" type="button" class="back-button" onclick="returnFromAudienceSetup(event)">← 처음으로</button>
                 <span class="step-label">청중 · 통역 입장</span>
             </header>
             <form class="glass form-card audience-card" onsubmit="event.preventDefault(); startAudience();">
@@ -542,12 +542,26 @@
             }, 0);
         }
 
-        function returnFromAudienceSetup() {
+        function clearAudienceInviteUrl() {
+            try {
+                window.history.replaceState({}, '', window.location.pathname || '/');
+            } catch (error) {
+                console.warn('Audience invite URL cleanup failed', {
+                    reason: error?.name || 'HistoryError'
+                });
+            }
+        }
+
+        function returnFromAudienceSetup(event) {
+            event?.preventDefault();
+            currentRole = '';
             const input = document.getElementById('audience_room_id');
-            input.readOnly = false;
-            document.getElementById('audience_intro').innerText = '강연자에게 받은 방 이름과 비밀번호를 입력하세요.';
-            history.replaceState({}, '', '/');
+            if (input) input.readOnly = false;
+            const intro = document.getElementById('audience_intro');
+            if (intro) intro.innerText = '강연자에게 받은 방 이름과 비밀번호를 입력하세요.';
+            clearFormError('audience');
             showScreen('role_screen');
+            clearAudienceInviteUrl();
         }
 
         function setFormError(role, message) {
