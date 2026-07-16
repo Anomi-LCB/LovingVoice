@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LovingVoice - 실시간 AI 통역</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/app.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', 'Noto Sans KR', sans-serif; background-color: #0f172a; color: #f8fafc; }
@@ -19,7 +19,11 @@
         <div class="space-y-4">
             <div>
                 <label class="block text-sm font-medium mb-1">강연장 코드 (Room ID)</label>
-                <input type="text" id="room_id" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="예: 7777" value="7777">
+                <div class="flex gap-2">
+                    <input type="text" id="room_id" class="min-w-0 flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="예: 7777" value="7777">
+                    <button type="button" onclick="createRoom(this)" class="whitespace-nowrap bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded-lg text-sm font-bold">새 방 만들기</button>
+                </div>
+                <p id="room_hint" class="mt-2 text-xs text-slate-400">기존 코드를 입력하거나 안전한 새 방을 만드세요.</p>
             </div>
             <div id="speaker_pass_container">
                 <label class="block text-sm font-medium mb-1">🔐 강연자 비밀번호</label>
@@ -45,46 +49,80 @@
                 <button onclick="startSpeaker()" class="flex-1 bg-blue-600 hover:bg-blue-500 transition-colors font-bold py-3 rounded-xl shadow-lg">강연 시작</button>
                 <button onclick="startAudience()" class="flex-1 bg-slate-700 hover:bg-slate-600 transition-colors font-bold py-3 rounded-xl shadow-lg">청중 입장</button>
             </div>
-            <div id="voice_mode_box">
-                <label class="block text-sm font-medium mb-1 mt-4">🎙️ 음성 모드 (강연자 전용)</label>
-                <select id="voice_mode" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none text-sm">
-                    <option value="speed">⚡ 속도 우선 — Google Cloud TTS (~0.3초, 빠르고 안정적)</option>
-                    <option value="quality">✨ 품질 우선 — Gemini AI Voice (~2초, 자연스러운 원어민 톤)</option>
-                </select>
-            </div>
+            <input type="hidden" id="voice_mode" value="openai">
         </div>
     </div>
 
     <div id="active_ui" class="hidden w-full max-w-4xl space-y-6">
-        <div class="flex items-center justify-between glass p-4 rounded-xl">
-            <div class="flex items-center gap-3">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 glass p-4 rounded-xl">
+            <div class="flex min-w-0 items-center gap-3">
                 <div id="status_dot" class="w-3 h-3 rounded-full bg-gray-500"></div>
                 <span id="status_text" class="text-sm font-medium">연결 준비 중...</span>
             </div>
-            <div id="room_display" class="text-sm bg-slate-800 px-3 py-1 rounded-full border border-slate-700">ROOM: -</div>
+            <div class="flex flex-wrap items-center justify-end gap-2">
+                <button onclick="copyAudienceLink()" class="text-sm bg-blue-950 hover:bg-blue-900 px-3 py-1.5 rounded-full border border-blue-800">초대 링크 복사</button>
+                <div id="room_display" class="text-sm bg-slate-800 px-3 py-1 rounded-full border border-slate-700">ROOM: -</div>
+                <button onclick="leaveSession()" class="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-full border border-slate-700">나가기</button>
+            </div>
         </div>
 
         <div class="glass p-4 rounded-2xl h-[400px] md:h-[500px] flex flex-col w-full text-left overflow-hidden">
+            <div class="flex items-center justify-between px-4 pb-3 text-xs text-slate-400">
+                <span id="recent_history_label">최근 5분 자막</span>
+                <span id="route_badge" class="rounded-full bg-slate-800 px-3 py-1">공유 언어 채널</span>
+            </div>
             <!-- 히스토리 영역 (채팅처럼 이전 대화 기록) -->
-            <div id="history_area" class="flex-1 overflow-y-auto space-y-3 pb-4 opacity-70 text-xl md:text-2xl font-medium px-4 scroll-smooth">
+            <div id="history_area" aria-live="polite" class="flex-1 overflow-y-auto space-y-3 pb-4 opacity-70 text-xl md:text-2xl font-medium px-4 scroll-smooth">
             </div>
             <!-- 활성 문장 (현재 대화 중인 가장 크고 밝은 텍스트) -->
-            <div id="subtitle_area" class="text-2xl md:text-4xl font-bold leading-tight break-keep pt-4 border-t border-slate-700 px-4 min-h-[80px] text-blue-100">
+            <div id="subtitle_area" aria-live="assertive" class="text-2xl md:text-4xl font-bold leading-tight break-keep pt-4 border-t border-slate-700 px-4 min-h-[80px] text-blue-100">
                 강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.
             </div>
         </div>
 
-        <div id="speaker_controls" class="hidden glass p-4 rounded-xl flex justify-center">
+        <div id="speaker_controls" class="hidden glass p-4 rounded-xl flex flex-wrap justify-center gap-3">
+            <button id="mute_button" onclick="toggleMute()" class="bg-slate-700 hover:bg-slate-600 px-6 py-2 rounded-lg font-bold transition-all">
+                마이크 음소거
+            </button>
+            <button id="record_button" onclick="toggleRecording()" class="bg-blue-700 hover:bg-blue-600 px-6 py-2 rounded-lg font-bold transition-all">
+                녹음 시작
+            </button>
+            <a id="recording_download" onclick="markRecordingSaved()" class="hidden bg-blue-950 hover:bg-blue-900 px-6 py-2 rounded-lg font-bold transition-all" href="#">
+                녹음 파일 저장
+            </a>
             <button onclick="sendTestAudio()" class="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-lg font-bold transition-all flex items-center gap-2">
                 테스트 알림 발송
             </button>
+            <button onclick="leaveSession()" class="bg-slate-800 hover:bg-slate-700 px-6 py-2 rounded-lg font-bold transition-all">
+                방송 종료
+            </button>
+            <p id="recording_status" class="w-full text-center text-xs text-slate-400">원본 음성은 이 기기에서만 녹음됩니다.</p>
         </div>
     </div>
 
     <script>
         let ws;
         let audioCtx;
+        let playbackCtx;
         let workletNode;
+        let micStream;
+        const nextPlaybackTimes = new Map();
+        let reconnectTimer;
+        let heartbeatTimer;
+        let audienceConfig;
+        let currentRoom = '';
+        let isLeaving = false;
+        let speakerAuthenticated = false;
+        let isMuted = false;
+        let mediaRecorder = null;
+        let recordingChunks = [];
+        let recordingStartedAt = 0;
+        let recordingTimer = null;
+        let recordingUrl = '';
+        let recordingMimeType = '';
+        let recordingStopResolver = null;
+        let downloadRecordingOnStop = false;
+        let recordingSaved = false;
 
         function setStatus(state, text) {
             const dot = document.getElementById('status_dot');
@@ -97,51 +135,321 @@
             document.getElementById('setup_box').classList.add('hidden');
             document.getElementById('active_ui').classList.remove('hidden');
             if (isSpeaker) document.getElementById('speaker_controls').classList.remove('hidden');
-            document.getElementById('room_display').innerText = 'ROOM: ' + document.getElementById('room_id').value;
+            currentRoom = cleanRoomId(document.getElementById('room_id').value);
+            document.getElementById('room_display').innerText = 'ROOM: ' + currentRoom;
+        }
+
+        function cleanRoomId(value) {
+            return value.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+        }
+
+        async function createRoom(button) {
+            if (button) button.disabled = true;
+            try {
+                const response = await fetch('/api/rooms', { method: 'POST' });
+                if (!response.ok) throw new Error('방을 만들 수 없습니다.');
+                const room = await response.json();
+                document.getElementById('room_id').value = room.room_id;
+                document.getElementById('speaker_pass').value = '';
+                sessionStorage.setItem(`lovingvoice:host-token:${room.room_id}`, room.speaker_token);
+                document.getElementById('room_hint').innerText = `안전한 방 ${room.room_id}이 준비되었습니다. 초대 링크를 공유하세요.`;
+                history.replaceState({}, '', `/?room=${encodeURIComponent(room.room_id)}`);
+            } catch (error) {
+                alert(error.message || '새 방 생성에 실패했습니다.');
+            } finally {
+                if (button) button.disabled = false;
+            }
+        }
+
+        async function copyAudienceLink() {
+            const room = currentRoom || cleanRoomId(document.getElementById('room_id').value);
+            if (!room) return alert('방 코드가 없습니다.');
+            const url = new URL(window.location.href);
+            url.search = '';
+            url.searchParams.set('room', room);
+            try {
+                await navigator.clipboard.writeText(url.toString());
+                setStatus('online', '청중 초대 링크를 복사했습니다.');
+            } catch (error) {
+                prompt('아래 초대 링크를 복사하세요.', url.toString());
+            }
+        }
+
+        function toggleMute() {
+            if (!micStream) return;
+            isMuted = !isMuted;
+            micStream.getAudioTracks().forEach(track => { track.enabled = !isMuted; });
+            document.getElementById('mute_button').innerText = isMuted ? '마이크 켜기' : '마이크 음소거';
+            setStatus('online', isMuted ? '방송 중 · MIC OFF' : '방송 중 · MIC ON');
+        }
+
+        function selectRecordingMimeType() {
+            if (!window.MediaRecorder) return '';
+            return [
+                'audio/webm;codecs=opus',
+                'audio/mp4',
+                'audio/webm',
+                'audio/ogg;codecs=opus'
+            ].find(type => MediaRecorder.isTypeSupported(type)) || '';
+        }
+
+        function recordingExtension(mimeType) {
+            if (mimeType.includes('mp4')) return 'm4a';
+            if (mimeType.includes('ogg')) return 'ogg';
+            return 'webm';
+        }
+
+        function recordingFileName() {
+            const stamp = new Date().toISOString()
+                .replace(/[-:]/g, '')
+                .replace('T', '-')
+                .replace(/\..+/, '');
+            return `LovingVoice-${currentRoom || 'lecture'}-${stamp}.${recordingExtension(recordingMimeType)}`;
+        }
+
+        function markRecordingSaved() {
+            recordingSaved = true;
+        }
+
+        function formatRecordingDuration() {
+            const totalSeconds = Math.max(0, Math.floor((Date.now() - recordingStartedAt) / 1000));
+            const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+            const seconds = String(totalSeconds % 60).padStart(2, '0');
+            return `${minutes}:${seconds}`;
+        }
+
+        function startRecording() {
+            if (!window.MediaRecorder) {
+                alert('이 브라우저는 녹음 기능을 지원하지 않습니다. 최신 Chrome, Edge 또는 Safari를 사용해주세요.');
+                return;
+            }
+            if (!micStream?.active) {
+                alert('마이크 연결이 완료된 후 녹음을 시작해주세요.');
+                return;
+            }
+            if (mediaRecorder?.state === 'recording') return;
+
+            if (recordingUrl) {
+                URL.revokeObjectURL(recordingUrl);
+                recordingUrl = '';
+            }
+            const download = document.getElementById('recording_download');
+            download.classList.add('hidden');
+            download.removeAttribute('href');
+            recordingChunks = [];
+            recordingSaved = false;
+            recordingMimeType = selectRecordingMimeType();
+            const options = recordingMimeType ? { mimeType: recordingMimeType } : undefined;
+
+            try {
+                mediaRecorder = new MediaRecorder(micStream, options);
+            } catch (error) {
+                alert('녹음을 시작할 수 없습니다: ' + error.message);
+                return;
+            }
+
+            mediaRecorder.ondataavailable = event => {
+                if (event.data?.size) recordingChunks.push(event.data);
+            };
+            mediaRecorder.onerror = event => {
+                document.getElementById('recording_status').innerText = `녹음 오류: ${event.error?.message || '알 수 없는 오류'}`;
+            };
+            mediaRecorder.onstop = () => {
+                clearInterval(recordingTimer);
+                recordingTimer = null;
+                const mimeType = mediaRecorder?.mimeType || recordingMimeType || 'audio/webm';
+                const blob = new Blob(recordingChunks, { type: mimeType });
+                if (blob.size) {
+                    recordingUrl = URL.createObjectURL(blob);
+                    download.href = recordingUrl;
+                    download.download = recordingFileName();
+                    download.classList.remove('hidden');
+                    document.getElementById('recording_status').innerText = `녹음 완료 · ${(blob.size / 1024 / 1024).toFixed(1)}MB`;
+                    if (downloadRecordingOnStop) download.click();
+                } else {
+                    document.getElementById('recording_status').innerText = '녹음된 음성이 없습니다.';
+                }
+                document.getElementById('record_button').innerText = '새 녹음 시작';
+                recordingChunks = [];
+                mediaRecorder = null;
+                downloadRecordingOnStop = false;
+                recordingStopResolver?.();
+                recordingStopResolver = null;
+            };
+
+            mediaRecorder.start(1000);
+            recordingStartedAt = Date.now();
+            document.getElementById('record_button').innerText = '녹음 중지';
+            document.getElementById('recording_status').innerText = '녹음 중 · 00:00';
+            recordingTimer = setInterval(() => {
+                document.getElementById('recording_status').innerText = `녹음 중 · ${formatRecordingDuration()}`;
+            }, 1000);
+        }
+
+        function stopRecording(downloadAfterStop = false) {
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') return Promise.resolve();
+            downloadRecordingOnStop = downloadRecordingOnStop || downloadAfterStop;
+            return new Promise(resolve => {
+                recordingStopResolver = resolve;
+                mediaRecorder.stop();
+            });
+        }
+
+        async function toggleRecording() {
+            if (mediaRecorder?.state === 'recording') {
+                await stopRecording(false);
+            } else {
+                startRecording();
+            }
+        }
+
+        async function leaveSession() {
+            isLeaving = true;
+            speakerAuthenticated = false;
+            clearTimeout(reconnectTimer);
+            clearInterval(heartbeatTimer);
+            if (mediaRecorder?.state === 'recording') {
+                await stopRecording(true);
+            } else if (recordingUrl && !recordingSaved) {
+                document.getElementById('recording_download').click();
+            }
+            if (ws) {
+                ws.onclose = null;
+                ws.close(1000, 'User left');
+                ws = null;
+            }
+            if (workletNode) {
+                workletNode.disconnect();
+                workletNode = null;
+            }
+            if (micStream) {
+                micStream.getTracks().forEach(track => track.stop());
+                micStream = null;
+            }
+            if (audioCtx) {
+                await audioCtx.close().catch(() => {});
+                audioCtx = null;
+            }
+            if (playbackCtx) {
+                await playbackCtx.close().catch(() => {});
+                playbackCtx = null;
+            }
+            nextPlaybackTimes.clear();
+            clearInterval(recordingTimer);
+            recordingTimer = null;
+            mediaRecorder = null;
+            recordingChunks = [];
+            recordingStartedAt = 0;
+            recordingMimeType = '';
+            recordingSaved = false;
+            if (recordingUrl) {
+                const urlToRevoke = recordingUrl;
+                setTimeout(() => URL.revokeObjectURL(urlToRevoke), 10000);
+                recordingUrl = '';
+            }
+            const recordingDownload = document.getElementById('recording_download');
+            recordingDownload.classList.add('hidden');
+            recordingDownload.removeAttribute('href');
+            document.getElementById('record_button').innerText = '녹음 시작';
+            document.getElementById('recording_status').innerText = '원본 음성은 이 기기에서만 녹음됩니다.';
+            isMuted = false;
+            document.getElementById('mute_button').innerText = '마이크 음소거';
+            document.getElementById('active_ui').classList.add('hidden');
+            document.getElementById('speaker_controls').classList.add('hidden');
+            document.getElementById('setup_box').classList.remove('hidden');
+            document.getElementById('history_area').replaceChildren();
+            document.getElementById('subtitle_area').innerText = '강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.';
+            audienceConfig = null;
+            isLeaving = false;
+        }
+
+        function ensurePlaybackContext() {
+            if (!playbackCtx) playbackCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            if (playbackCtx.state === 'suspended') playbackCtx.resume();
+            return playbackCtx;
+        }
+
+        function playPcm16(base64Audio, sampleRate = 24000, sourceId = 'default') {
+            if (!base64Audio) return;
+            const ctx = ensurePlaybackContext();
+            const binary = atob(base64Audio);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const pcm = new Int16Array(bytes.buffer);
+            const buffer = ctx.createBuffer(1, pcm.length, sampleRate);
+            const channel = buffer.getChannelData(0);
+            for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i] / 32768;
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            const now = ctx.currentTime;
+            let nextTime = nextPlaybackTimes.get(sourceId) || 0;
+            if (nextTime < now) nextTime = now + 0.02;
+            source.start(nextTime);
+            nextPlaybackTimes.set(sourceId, nextTime + buffer.duration);
         }
 
         async function startSpeaker() {
-            const room = document.getElementById('room_id').value;
+            const room = cleanRoomId(document.getElementById('room_id').value);
             if (!room) return alert('방 코드를 입력하세요.');
-            showActiveUI(true);
-            setStatus('offline', '마이크 권한 요청 중...');
 
             try {
                 const pass = document.getElementById('speaker_pass').value;
-                if (!pass) return alert('강연자 비밀번호를 입력해주세요.');
+                const token = sessionStorage.getItem(`lovingvoice:host-token:${room}`) || '';
+                if (!token && !pass) return alert('새 방을 만들거나 강연자 비밀번호를 입력해주세요.');
+                isLeaving = false;
+                speakerAuthenticated = false;
+                showActiveUI(true);
+                setStatus('offline', '마이크 권한 요청 중...');
 
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+                });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
                 
                 await audioCtx.audioWorklet.addModule('/recorder-worklet.js');
-                const source = audioCtx.createMediaStreamSource(stream);
+                const source = audioCtx.createMediaStreamSource(micStream);
                 workletNode = new AudioWorkletNode(audioCtx, 'recorder-processor');
                 
                 const voiceMode = document.getElementById('voice_mode').value;
+                const engine = voiceMode === 'openai' ? 'openai' : 'legacy';
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                ws = new WebSocket(`${protocol}//${window.location.host}/ws/speaker/${room}?password=${pass}&voice_mode=${voiceMode}`);
+                ws = new WebSocket(`${protocol}//${window.location.host}/ws/speaker/${encodeURIComponent(room)}?voice_mode=${encodeURIComponent(voiceMode)}&engine=${engine}`);
                 
-                ws.onopen = () => setStatus('online', '실시간 방송 중 (MIC ON)');
+                ws.onopen = () => {
+                    setStatus('offline', '강연자 권한 확인 중...');
+                    ws.send(JSON.stringify({ type: 'authenticate', token, password: pass }));
+                };
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'authenticated') {
+                        speakerAuthenticated = true;
+                        setStatus('online', engine === 'openai' ? 'GPT Realtime 방송 중 · MIC ON' : '기존 엔진 방송 중 · MIC ON');
+                    }
+                    if (data.type === 'engine_status') setStatus(data.state || 'online', data.message);
+                    if (data.type === 'engine_error') setStatus('error', data.message || '통역 엔진 오류');
+                };
                 ws.onclose = (e) => {
+                    speakerAuthenticated = false;
                     if (e.code === 4001) {
-                        alert('❌ 강연자 비밀번호가 틀렸습니다.');
-                        location.reload();
-                    } else if (e.code === 4002) {
-                        alert('❌ 이미 강연자가 가득 찼습니다 (최대 2명).');
-                        location.reload();
+                        sessionStorage.removeItem(`lovingvoice:host-token:${room}`);
+                        alert('❌ 강연자 인증이 만료되었거나 비밀번호가 틀렸습니다.');
+                        leaveSession();
                     } else {
                         setStatus('offline', '연결 종료됨');
                     }
                 };
                 
                 workletNode.port.onmessage = (e) => {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
+                    if (speakerAuthenticated && !isMuted && ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(e.data.buffer);
                     }
                 };
 
                 source.connect(workletNode);
-                workletNode.connect(audioCtx.destination);
+                const silentGain = audioCtx.createGain();
+                silentGain.gain.value = 0;
+                workletNode.connect(silentGain).connect(audioCtx.destination);
             } catch (err) {
                 console.error('AudioWorklet Error:', err);
                 setStatus('error', '마이크 설정 실패 (' + err.message + ')');
@@ -149,53 +457,170 @@
         }
 
         function startAudience() {
-            const room = document.getElementById('room_id').value;
+            const room = cleanRoomId(document.getElementById('room_id').value);
             const lang = document.getElementById('lang_select').value;
             if (!room) return alert('방 코드를 입력하세요.');
+            isLeaving = false;
             showActiveUI(false);
+            ensurePlaybackContext();
             setStatus('offline', '통역 서버 접속 중...');
+            audienceConfig = { room, lang };
+            connectAudience();
+        }
+
+        function connectAudience() {
+            if (!audienceConfig || isLeaving) return;
+            const { room, lang } = audienceConfig;
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws/audience/${room}/${lang}`);
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/audience/${encodeURIComponent(room)}/${encodeURIComponent(lang)}`);
 
-            let currentValidSubtitle = "";
+            const translations = new Map();
+            const sourceTranscripts = new Map();
+            const area = document.getElementById('subtitle_area');
+            const historyBox = document.getElementById('history_area');
+            const historyKey = `lovingvoice:subtitles:${room}:${lang}`;
+            let recentHistoryLimit = 30;
+            let recentHistoryMaxAgeMs = 5 * 60 * 1000;
+            const seenCaptionIds = new Set(
+                [...historyBox.querySelectorAll('[data-caption-id]')]
+                    .map(element => element.dataset.captionId)
+                    .filter(Boolean)
+            );
 
-            ws.onopen = () => setStatus('online', '통역 수신 중 (' + lang + ')');
+            function isRecentHistoryItem(item) {
+                if (!item || typeof item !== 'object' || !item.created_at) return false;
+                const createdAt = Date.parse(item.created_at);
+                return Number.isFinite(createdAt) && createdAt >= Date.now() - recentHistoryMaxAgeMs;
+            }
+
+            function trimRecentHistory() {
+                const cutoff = Date.now() - recentHistoryMaxAgeMs;
+                [...historyBox.children].forEach(element => {
+                    const createdAt = Date.parse(element.dataset.createdAt || '');
+                    if (Number.isFinite(createdAt) && createdAt < cutoff) element.remove();
+                });
+                while (historyBox.childElementCount > recentHistoryLimit) {
+                    historyBox.firstElementChild?.remove();
+                }
+            }
+
+            function renderHistoryItem(item) {
+                if (!isRecentHistoryItem(item)) return;
+                const text = item.text;
+                const captionId = item.id || '';
+                if (!text || text.includes('통역 자막이') || text.includes('Speaking')) return;
+                if (captionId && seenCaptionIds.has(captionId)) return;
+                const p = document.createElement('p');
+                p.className = 'border-l-2 border-slate-600 pl-3';
+                p.innerText = text;
+                if (captionId) {
+                    p.dataset.captionId = captionId;
+                    seenCaptionIds.add(captionId);
+                }
+                p.dataset.createdAt = item.created_at;
+                historyBox.appendChild(p);
+                trimRecentHistory();
+                historyBox.scrollTop = historyBox.scrollHeight;
+            }
+
+            if (historyBox.dataset.historyKey !== historyKey) {
+                historyBox.replaceChildren();
+                historyBox.dataset.historyKey = historyKey;
+                try {
+                    const savedHistory = JSON.parse(sessionStorage.getItem(historyKey) || '[]');
+                    savedHistory.filter(isRecentHistoryItem).slice(-recentHistoryLimit).forEach(renderHistoryItem);
+                } catch (error) {
+                    console.warn('Subtitle history restore failed', error);
+                }
+            }
+
+            function pushToHistory(text, caption = null) {
+                if (!text || text.includes('통역 자막이') || text.includes('Speaking')) return;
+                const item = caption?.text ? caption : {
+                    id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`),
+                    text,
+                    created_at: new Date().toISOString()
+                };
+                renderHistoryItem(item);
+                try {
+                    const savedHistory = JSON.parse(sessionStorage.getItem(historyKey) || '[]');
+                    if (!savedHistory.some(saved => saved?.id && saved.id === item.id)) savedHistory.push(item);
+                    const recentHistory = savedHistory
+                        .filter(isRecentHistoryItem)
+                        .slice(-recentHistoryLimit);
+                    sessionStorage.setItem(historyKey, JSON.stringify(recentHistory));
+                } catch (error) {
+                    console.warn('Subtitle history save failed', error);
+                }
+            }
+
+            ws.onopen = () => {
+                setStatus('online', '통역 수신 중 (' + lang + ')');
+                clearInterval(heartbeatTimer);
+                heartbeatTimer = setInterval(() => {
+                    if (ws?.readyState === WebSocket.OPEN) ws.send('ping');
+                }, 20000);
+            };
             ws.onmessage = async (event) => {
                 const data = JSON.parse(event.data);
-                const area = document.getElementById('subtitle_area');
-                const historyBox = document.getElementById('history_area');
-                
-                function pushToHistory(text) {
-                    if (!text || text.includes("통역 자막이") || text.includes("Speaking")) return;
-                    const p = document.createElement('p');
-                    p.innerText = text;
-                    historyBox.appendChild(p);
-                    historyBox.scrollTop = historyBox.scrollHeight;
-                }
 
-                if (data.type === 'transcript') {
+                if (data.type === 'history_snapshot') {
+                    recentHistoryLimit = Math.max(1, Number(data.policy?.max_items) || 30);
+                    recentHistoryMaxAgeMs = Math.max(30000, (Number(data.policy?.max_age_seconds) || 300) * 1000);
+                    const recentMinutes = Math.max(1, Math.round(recentHistoryMaxAgeMs / 60000));
+                    document.getElementById('recent_history_label').innerText = `최근 ${recentMinutes}분 자막`;
+                    (data.items || []).forEach(renderHistoryItem);
+                    trimRecentHistory();
+                } else if (data.type === 'room_status') {
+                    const languageAudience = (data.audience_by_language || {})[lang] || 0;
+                    document.getElementById('route_badge').innerText = `${lang} 공유 채널 · ${languageAudience}명`;
+                    if (data.speaker_count > 0) {
+                        setStatus('online', `강연자 연결됨 · ${lang} 통역 채널 공유 중`);
+                    } else {
+                        setStatus('offline', '강연자가 방을 시작하기를 기다리는 중…');
+                    }
+                } else if (data.type === 'transcript_delta') {
+                    const sourceId = data.source_id || 'default';
+                    const sourceText = (sourceTranscripts.get(sourceId) || '') + (data.text || '');
+                    sourceTranscripts.set(sourceId, sourceText);
+                    if (lang === 'ko-KR') area.innerText = sourceText;
+                    else if (!translations.size) area.innerText = '🗣️ 원문 인식 중…';
+                } else if (data.type === 'transcript_done') {
+                    const sourceId = data.source_id || 'default';
+                    sourceTranscripts.delete(sourceId);
+                } else if (data.type === 'translation_delta') {
+                    const sourceId = data.source_id || 'default';
+                    const translatedText = (translations.get(sourceId) || '') + (data.text || '');
+                    translations.set(sourceId, translatedText);
+                    area.innerText = translatedText;
+                    area.classList.remove('italic', 'text-blue-300');
+                } else if (data.type === 'translation_done') {
+                    const sourceId = data.source_id || 'default';
+                    const translatedText = translations.get(sourceId) || '';
+                    const completedText = data.caption?.text || translatedText;
+                    if (completedText) pushToHistory(completedText, data.caption);
+                    translations.delete(sourceId);
+                    if (!translations.size) {
+                        area.innerText = '다음 실시간 통역을 기다리는 중…';
+                        area.classList.add('italic', 'text-blue-300');
+                    }
+                } else if (data.type === 'audio_delta') {
+                    playPcm16(data.audio, data.sample_rate || 24000, data.source_id || 'default');
+                } else if (data.type === 'engine_status') {
+                    setStatus(data.state || 'online', data.message || 'GPT Realtime 통역 수신 중');
+                } else if (data.type === 'engine_error') {
+                    setStatus('error', data.message || '통역 엔진 오류');
+                } else if (data.type === 'transcript') {
                     if (lang !== 'ko-KR') {
-                        if (currentValidSubtitle) {
-                            pushToHistory(currentValidSubtitle);
-                            currentValidSubtitle = "";
-                        }
                         area.innerText = "🗣️ ... (Speaking) ...";
                         area.classList.add('italic', 'text-blue-300');
                     } else {
-                        if (currentValidSubtitle) {
-                            pushToHistory(currentValidSubtitle);
-                            currentValidSubtitle = ""; 
-                        }
                         area.innerText = data.text;
                         area.classList.remove('italic', 'text-blue-300');
                         if (!data.is_final) area.classList.add('italic', 'text-blue-300');
                     }
                 } else if (data.type === 'translation') {
-                    if (currentValidSubtitle && currentValidSubtitle !== data.text) {
-                        pushToHistory(currentValidSubtitle);
-                    }
-                    currentValidSubtitle = data.text;
                     area.innerText = data.text;
                     area.classList.remove('italic', 'text-blue-300');
                     
@@ -218,14 +643,33 @@
                     }
                 }
             };
-            ws.onclose = () => setStatus('offline', '연결 끊김');
+            ws.onclose = () => {
+                clearInterval(heartbeatTimer);
+                if (isLeaving || !audienceConfig) return;
+                setStatus('offline', '연결 끊김 · 재연결 중…');
+                clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(connectAudience, 1500);
+            };
         }
 
         function sendTestAudio() {
-            if (ws && ws.readyState === WebSocket.OPEN) {
+            if (speakerAuthenticated && ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'test_audio' }));
             }
         }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const room = cleanRoomId(params.get('room') || '');
+            const language = params.get('lang');
+            if (room) {
+                document.getElementById('room_id').value = room;
+                document.getElementById('room_hint').innerText = `초대받은 방 ${room}에 입장할 수 있습니다.`;
+            }
+            if (language && [...document.getElementById('lang_select').options].some(option => option.value === language)) {
+                document.getElementById('lang_select').value = language;
+            }
+        });
     </script>
 </body>
 </html>
