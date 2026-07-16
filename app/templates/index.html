@@ -109,6 +109,10 @@
         .form-control[readonly] { background: #f1f5f9; color: #475569; }
         .password-field { position: relative; width: 100%; max-width: 100%; }
         .password-field .form-control { padding-right: 64px; }
+        .audience-form-fields { width: min(100%, 840px); max-width: 100%; }
+        .audience-form-fields .field-group,
+        .audience-form-fields .password-field,
+        .audience-form-fields .form-control { width: 100%; max-width: 100%; box-sizing: border-box; }
         .password-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 7px 9px; border: 0; border-radius: 8px; background: transparent; color: #64748b; font-size: .78rem; font-weight: 750; }
         .password-toggle:hover { background: #f1f5f9; color: #2563eb; }
         .form-error { min-height: 22px; margin: 14px 0 0; color: #dc2626; font-size: .86rem; font-weight: 650; line-height: 1.5; }
@@ -310,33 +314,35 @@
             <form class="glass form-card audience-card" onsubmit="event.preventDefault(); startAudience();">
                 <h2 class="form-title">청중 입장</h2>
                 <p id="audience_intro" class="form-copy">강연자에게 받은 방 이름과 비밀번호를 입력하세요.</p>
-                <div class="field-group">
-                    <label class="field-label" for="audience_room_id">방 이름</label>
-                    <input id="audience_room_id" class="form-control" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="초대받은 방 이름">
-                </div>
-                <div class="field-group">
-                    <label class="field-label" for="audience_room_password">방 비밀번호</label>
-                    <div class="password-field">
-                        <input id="audience_room_password" class="form-control" type="password" maxlength="32" autocomplete="current-password" autocapitalize="none" spellcheck="false" placeholder="강연자에게 받은 비밀번호">
-                        <button type="button" class="password-toggle" onclick="togglePassword('audience_room_password', this)">보기</button>
+                <div class="audience-form-fields">
+                    <div class="field-group">
+                        <label class="field-label" for="audience_room_id">방 이름</label>
+                        <input id="audience_room_id" class="form-control" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="초대받은 방 이름">
                     </div>
-                </div>
-                <div class="field-group">
-                    <label class="field-label" for="audience_lang_select">내가 들을 언어</label>
-                    <select id="audience_lang_select" class="form-control">
-                        <option value="ko-KR">한국어</option>
-                        <option value="en-US">English</option>
-                        <option value="zh-TW">繁體中文</option>
-                        <option value="zh-CN">简体中文</option>
-                        <option value="ja-JP">日本語</option>
-                        <option value="vi-VN">Tiếng Việt (베트남어)</option>
-                        <option value="ta-IN">தமிழ் (타밀어)</option>
-                        <option value="ne-NP">नेपाली (네팔어)</option>
-                        <option value="mn-MN">Монгол (몽골어)</option>
-                        <option value="my-MM">မြန်မာ (버마어)</option>
-                        <option value="km-KH">ខ្មែរ (크메르어)</option>
-                    </select>
-                    <p class="field-help">같은 언어를 선택한 청중은 하나의 번역 채널을 공유합니다.</p>
+                    <div class="field-group">
+                        <label class="field-label" for="audience_room_password">방 비밀번호</label>
+                        <div class="password-field">
+                            <input id="audience_room_password" class="form-control" type="password" maxlength="32" autocomplete="current-password" autocapitalize="none" spellcheck="false" placeholder="강연자에게 받은 비밀번호">
+                            <button type="button" class="password-toggle" onclick="togglePassword('audience_room_password', this)">보기</button>
+                        </div>
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label" for="audience_lang_select">내가 들을 언어</label>
+                        <select id="audience_lang_select" class="form-control">
+                            <option value="ko-KR">한국어</option>
+                            <option value="en-US">English</option>
+                            <option value="zh-TW">繁體中文</option>
+                            <option value="zh-CN">简体中文</option>
+                            <option value="ja-JP">日本語</option>
+                            <option value="vi-VN">Tiếng Việt (베트남어)</option>
+                            <option value="ta-IN">தமிழ் (타밀어)</option>
+                            <option value="ne-NP">नेपाली (네팔어)</option>
+                            <option value="mn-MN">Монгол (몽골어)</option>
+                            <option value="my-MM">မြန်မာ (버마어)</option>
+                            <option value="km-KH">ខ្មែរ (크메르어)</option>
+                        </select>
+                        <p class="field-help">같은 언어를 선택한 청중은 하나의 번역 채널을 공유합니다.</p>
+                    </div>
                 </div>
                 <p id="audience_form_error" class="form-error" role="alert"></p>
                 <div class="button-row">
