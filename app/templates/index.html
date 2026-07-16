@@ -154,6 +154,9 @@
         .host-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; padding: 16px; border-radius: 18px; }
         .host-controls.hidden { display: none; }
         .control-button { min-height: 44px; padding: 0 16px; border-radius: 11px; background: #e2e8f0; color: #243047; font-weight: 780; }
+        .control-button.with-icon { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+        .lucide-mic-icon { width: 18px; height: 18px; flex: 0 0 auto; background: currentColor; -webkit-mask: url('https://unpkg.com/lucide-static@1.24.0/icons/mic.svg') center / contain no-repeat; mask: url('https://unpkg.com/lucide-static@1.24.0/icons/mic.svg') center / contain no-repeat; }
+        .lucide-mic-icon.off { -webkit-mask-image: url('https://unpkg.com/lucide-static@1.24.0/icons/mic-off.svg'); mask-image: url('https://unpkg.com/lucide-static@1.24.0/icons/mic-off.svg'); }
         .control-button.primary { background: #1d4ed8; color: #fff; }
         .control-button.danger { background: #dc2626; color: #fff; }
         .recording-note { width: 100%; margin: 2px 0 0; text-align: center; color: #64748b; font-size: .78rem; }
@@ -368,7 +371,10 @@
             </div>
 
             <div id="speaker_controls" class="host-controls glass hidden">
-                <button id="mute_button" type="button" onclick="toggleMute()" class="control-button">마이크 음소거</button>
+                <button id="mute_button" type="button" onclick="toggleMute()" class="control-button with-icon" aria-pressed="false" title="마이크 음소거">
+                    <span id="mute_icon" class="lucide-mic-icon" aria-hidden="true"></span>
+                    <span id="mute_label">마이크 음소거</span>
+                </button>
                 <button id="record_button" type="button" onclick="toggleRecording()" class="control-button primary">녹음 시작</button>
                 <button id="recording_download" type="button" onclick="downloadRecordingFiles()" class="control-button hidden">녹음·자막 저장</button>
                 <button type="button" onclick="sendTestAudio()" class="control-button">연결 테스트</button>
@@ -840,11 +846,23 @@
             }
         }
 
+        function updateMuteButton() {
+            const button = document.getElementById('mute_button');
+            const label = document.getElementById('mute_label');
+            const icon = document.getElementById('mute_icon');
+            const nextAction = isMuted ? '마이크 켜기' : '마이크 음소거';
+            label.innerText = nextAction;
+            icon.classList.toggle('off', isMuted);
+            button.setAttribute('aria-pressed', String(isMuted));
+            button.setAttribute('aria-label', nextAction);
+            button.title = nextAction;
+        }
+
         function toggleMute() {
             if (currentRole !== 'host' || !micStream) return;
             isMuted = !isMuted;
             micStream.getAudioTracks().forEach(track => { track.enabled = !isMuted; });
-            document.getElementById('mute_button').innerText = isMuted ? '마이크 켜기' : '마이크 음소거';
+            updateMuteButton();
             setStatus('online', isMuted ? '방송 중 · MIC OFF' : '방송 중 · MIC ON');
         }
 
@@ -1123,7 +1141,7 @@
             recordButton.innerText = '녹음 시작';
             document.getElementById('recording_status').innerText = '원본 음성과 자막 텍스트는 이 기기에서만 저장됩니다.';
             isMuted = false;
-            document.getElementById('mute_button').innerText = '마이크 음소거';
+            updateMuteButton();
             document.getElementById('active_ui').classList.add('hidden');
             document.getElementById('speaker_controls').classList.add('hidden');
             const historyBox = document.getElementById('history_area');
