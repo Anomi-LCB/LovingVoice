@@ -134,6 +134,9 @@ async def test_listener_count_never_multiplies_openai_routes(monkeypatch):
         def start(self):
             pass
 
+        async def wait_until_ready(self):
+            return True
+
         async def close(self):
             pass
 
@@ -172,6 +175,9 @@ async def test_new_audience_language_is_prepared_before_next_audio(monkeypatch):
 
         def start(self):
             pass
+
+        async def wait_until_ready(self):
+            return True
 
         async def close(self):
             pass

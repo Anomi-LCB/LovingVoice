@@ -69,6 +69,7 @@ class OpenAITranslationSession:
         self.audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue(
             maxsize=math.ceil(backlog_ms / 20)
         )
+        self.ready = asyncio.Event()
         self.task: asyncio.Task | None = None
         self.closed = False
         self.dropped_frames = 0
@@ -78,6 +79,26 @@ class OpenAITranslationSession:
     def start(self) -> None:
         if self.task is None or self.task.done():
             self.task = asyncio.create_task(self._run())
+
+    async def wait_until_ready(self) -> bool:
+        """Wait for the OpenAI socket before the UI declares broadcasting ready."""
+        self.start()
+        timeout = max(
+            3.0,
+            min(
+                20.0,
+                float(os.getenv("OPENAI_REALTIME_READY_TIMEOUT_SECONDS", "8")),
+            ),
+        )
+        try:
+            await asyncio.wait_for(self.ready.wait(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Realtime translation readiness timed out (%s)",
+                self.target_language,
+            )
+            return False
 
     async def feed(self, pcm16: bytes) -> None:
         if self.closed:
@@ -95,6 +116,7 @@ class OpenAITranslationSession:
         if self.closed:
             return
         self.closed = True
+        self.ready.clear()
         try:
             self.audio_queue.put_nowait(None)
         except asyncio.QueueFull:
@@ -108,12 +130,14 @@ class OpenAITranslationSession:
     async def _run(self) -> None:
         retry_delay = 0.5
         while not self.closed:
+            self.ready.clear()
             try:
                 await self._run_connection()
                 retry_delay = 0.5
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                self.ready.clear()
                 logger.exception("Realtime translation connection failed (%s)", self.target_language)
                 await self.on_event(
                     {
@@ -167,6 +191,10 @@ class OpenAITranslationSession:
                     }
                 )
             )
+            # The websocket and translation session are now configured. Audio
+            # sent after this point does not spend its first second waiting in
+            # the server backlog while the upstream connection is opening.
+            self.ready.set()
             await self.on_event(
                 {
                     "type": "engine_status",
@@ -304,7 +332,8 @@ class RealtimeTranslationHub:
         """Open translation routes before the first microphone frame arrives."""
         if not self.available:
             return
-        await self._sync_languages(room_id, source_id, languages)
+        sessions = await self._sync_languages(room_id, source_id, languages)
+        await self._wait_for_sessions(sessions)
 
     async def prepare_language(self, room_id: str, language: str) -> None:
         """Warm a new audience language for every active source in the room."""
@@ -316,13 +345,29 @@ class RealtimeTranslationHub:
                 if room == room_id:
                     source_languages.setdefault(source, set()).add(current_language)
         if source_languages:
-            await asyncio.gather(
+            prepared = await asyncio.gather(
                 *(
                     self._sync_languages(
                         room_id, source, current_languages | {language}
                     )
                     for source, current_languages in source_languages.items()
                 )
+            )
+            await self._wait_for_sessions(
+                [session for sessions in prepared for session in sessions]
+            )
+
+    @staticmethod
+    async def _wait_for_sessions(
+        sessions: Iterable[OpenAITranslationSession],
+    ) -> None:
+        unique_sessions = list(
+            {id(session): session for session in sessions}.values()
+        )
+        if unique_sessions:
+            await asyncio.gather(
+                *(session.wait_until_ready() for session in unique_sessions),
+                return_exceptions=True,
             )
 
     async def _sync_languages(
