@@ -68,6 +68,17 @@ async def test_same_language_audiences_share_one_language_channel():
 
 
 @pytest.mark.asyncio
+async def test_speaker_caption_route_exists_before_any_audience_joins():
+    manager = ConnectionManager()
+
+    assert manager.realtime_languages("room") == ["ko-KR"]
+
+    await manager.add_audience("room", "en-US", FakeAudience())
+
+    assert manager.realtime_languages("room") == ["en-US"]
+
+
+@pytest.mark.asyncio
 async def test_completed_subtitles_are_bounded_and_available_to_late_joiners(monkeypatch):
     monkeypatch.setenv("SUBTITLE_HISTORY_LIMIT", "10")
     manager = ConnectionManager()

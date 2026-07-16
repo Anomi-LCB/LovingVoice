@@ -370,10 +370,10 @@
             <div id="speaker_controls" class="host-controls glass hidden">
                 <button id="mute_button" type="button" onclick="toggleMute()" class="control-button">마이크 음소거</button>
                 <button id="record_button" type="button" onclick="toggleRecording()" class="control-button primary">녹음 시작</button>
-                <a id="recording_download" onclick="markRecordingSaved()" class="control-button hidden" href="#">녹음 파일 저장</a>
+                <button id="recording_download" type="button" onclick="downloadRecordingFiles()" class="control-button hidden">녹음·자막 저장</button>
                 <button type="button" onclick="sendTestAudio()" class="control-button">연결 테스트</button>
                 <button type="button" onclick="leaveSession('home')" class="control-button danger">방송 종료</button>
-                <p id="recording_status" class="recording-note">원본 음성은 이 기기에서만 녹음됩니다.</p>
+                <p id="recording_status" class="recording-note">원본 음성과 자막 텍스트는 이 기기에서만 저장됩니다.</p>
             </div>
         </section>
     </main>
@@ -460,12 +460,21 @@
         let recordingStartedAt = 0;
         let recordingTimer = null;
         let recordingUrl = '';
+        let recordingTextUrl = '';
         let recordingMimeType = '';
+        let recordingFileStem = '';
+        let recordingRoomLabel = '';
+        let recordingStartedLabel = '';
+        let recordingTranscriptEntries = [];
+        let recordingCaptureUntil = 0;
+        let recordingFinalizing = false;
+        let recordingStopPromise = null;
         let recordingStopResolver = null;
         let downloadRecordingOnStop = false;
         let recordingSaved = false;
         const COMPLETED_CAPTION_HOLD_MS = 2200;
         const AUDIENCE_HISTORY_MAX_ITEMS = 20;
+        const RECORDING_TRANSCRIPT_GRACE_MS = 1600;
 
         function applyTheme(theme, { persist = true } = {}) {
             const nextTheme = theme === 'dark' ? 'dark' : 'light';
@@ -816,12 +825,18 @@
                 speakerCaptionDisplay.updateCaption(text);
             } else if (data.type === 'transcript_done') {
                 const completed = speakerTranscripts.get(sourceId) || '';
-                if (completed) speakerCaptionDisplay.completeCaption(completed);
+                if (completed) {
+                    speakerCaptionDisplay.completeCaption(completed);
+                    captureRecordingTranscript(completed);
+                }
                 speakerTranscripts.delete(sourceId);
             } else if (data.type === 'transcript') {
                 speakerCaptionDisplay.startCaption();
                 speakerCaptionDisplay.updateCaption(data.text || '', { sourcePreview: !data.is_final });
-                if (data.is_final) speakerCaptionDisplay.completeCaption(data.text || '');
+                if (data.is_final) {
+                    speakerCaptionDisplay.completeCaption(data.text || '');
+                    captureRecordingTranscript(data.text || '');
+                }
             }
         }
 
@@ -849,16 +864,70 @@
             return 'webm';
         }
 
-        function recordingFileName() {
+        function createRecordingFileStem() {
             const stamp = new Date().toISOString()
                 .replace(/[-:]/g, '')
                 .replace('T', '-')
                 .replace(/\..+/, '');
-            return `LovingVoice-${currentRoom || 'lecture'}-${stamp}.${recordingExtension(recordingMimeType)}`;
+            return `LovingVoice-${currentRoom || 'lecture'}-${stamp}`;
         }
 
-        function markRecordingSaved() {
+        function recordingFileName() {
+            return `${recordingFileStem || createRecordingFileStem()}.${recordingExtension(recordingMimeType)}`;
+        }
+
+        function recordingTextFileName() {
+            return `${recordingFileStem || createRecordingFileStem()}.txt`;
+        }
+
+        function triggerFileDownload(url, fileName) {
+            if (!url) return;
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        }
+
+        function downloadRecordingFiles() {
+            triggerFileDownload(recordingUrl, recordingFileName());
+            triggerFileDownload(recordingTextUrl, recordingTextFileName());
             recordingSaved = true;
+            document.getElementById('recording_status').innerText = `음성·자막 저장 요청 완료 · 자막 ${recordingTranscriptEntries.length}줄`;
+        }
+
+        function captureRecordingTranscript(text) {
+            const normalizedText = (text || '').trim();
+            const isCaptureWindowOpen = mediaRecorder?.state === 'recording' || Date.now() <= recordingCaptureUntil;
+            if (!normalizedText || !isCaptureWindowOpen) return;
+            const offsetMs = Math.max(0, Date.now() - recordingStartedAt);
+            const previous = recordingTranscriptEntries.at(-1);
+            if (previous?.text === normalizedText && offsetMs - previous.offsetMs < 3000) return;
+            recordingTranscriptEntries.push({ offsetMs, text: normalizedText });
+        }
+
+        function formatTranscriptOffset(offsetMs) {
+            const totalSeconds = Math.max(0, Math.floor(offsetMs / 1000));
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            return hours
+                ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+                : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        function createRecordingTranscriptBlob() {
+            const lines = [
+                'LovingVoice 강연 녹음 자막',
+                `방 이름: ${recordingRoomLabel || currentRoom || 'lecture'}`,
+                `녹음 시작: ${recordingStartedLabel}`,
+                '',
+                ...recordingTranscriptEntries.map(entry => `[${formatTranscriptOffset(entry.offsetMs)}] ${entry.text}`)
+            ];
+            if (!recordingTranscriptEntries.length) lines.push('[완료된 자막 없음]');
+            return new Blob(['\ufeff', lines.join('\r\n')], { type: 'text/plain;charset=utf-8' });
         }
 
         function formatRecordingDuration() {
@@ -880,14 +949,24 @@
             }
             if (mediaRecorder?.state === 'recording') return;
 
+            if ((recordingUrl || recordingTextUrl) && !recordingSaved) {
+                downloadRecordingFiles();
+            }
             if (recordingUrl) {
                 URL.revokeObjectURL(recordingUrl);
                 recordingUrl = '';
             }
+            if (recordingTextUrl) {
+                URL.revokeObjectURL(recordingTextUrl);
+                recordingTextUrl = '';
+            }
             const download = document.getElementById('recording_download');
             download.classList.add('hidden');
-            download.removeAttribute('href');
             recordingChunks = [];
+            recordingTranscriptEntries = [];
+            recordingCaptureUntil = 0;
+            recordingFinalizing = false;
+            recordingStopPromise = null;
             recordingSaved = false;
             recordingMimeType = selectRecordingMimeType();
             const options = recordingMimeType ? { mimeType: recordingMimeType } : undefined;
@@ -910,26 +989,37 @@
                 recordingTimer = null;
                 const mimeType = mediaRecorder?.mimeType || recordingMimeType || 'audio/webm';
                 const blob = new Blob(recordingChunks, { type: mimeType });
-                if (blob.size) {
-                    recordingUrl = URL.createObjectURL(blob);
-                    download.href = recordingUrl;
-                    download.download = recordingFileName();
+                const finalizeDelay = Math.max(0, recordingCaptureUntil - Date.now());
+                setTimeout(() => {
+                    recordingTextUrl = URL.createObjectURL(createRecordingTranscriptBlob());
+                    if (blob.size) {
+                        recordingUrl = URL.createObjectURL(blob);
+                        document.getElementById('recording_status').innerText = `녹음 완료 · ${(blob.size / 1024 / 1024).toFixed(1)}MB · 자막 ${recordingTranscriptEntries.length}줄`;
+                    } else {
+                        document.getElementById('recording_status').innerText = `녹음된 음성 없음 · 자막 ${recordingTranscriptEntries.length}줄 저장 가능`;
+                    }
                     download.classList.remove('hidden');
-                    document.getElementById('recording_status').innerText = `녹음 완료 · ${(blob.size / 1024 / 1024).toFixed(1)}MB`;
-                    if (downloadRecordingOnStop) download.click();
-                } else {
-                    document.getElementById('recording_status').innerText = '녹음된 음성이 없습니다.';
-                }
-                document.getElementById('record_button').innerText = '새 녹음 시작';
-                recordingChunks = [];
-                mediaRecorder = null;
-                downloadRecordingOnStop = false;
-                recordingStopResolver?.();
-                recordingStopResolver = null;
+                    if (downloadRecordingOnStop) downloadRecordingFiles();
+                    const recordButton = document.getElementById('record_button');
+                    recordButton.disabled = false;
+                    recordButton.innerText = '새 녹음 시작';
+                    recordingChunks = [];
+                    mediaRecorder = null;
+                    recordingCaptureUntil = 0;
+                    recordingFinalizing = false;
+                    downloadRecordingOnStop = false;
+                    const resolveStop = recordingStopResolver;
+                    recordingStopResolver = null;
+                    recordingStopPromise = null;
+                    resolveStop?.();
+                }, finalizeDelay);
             };
 
             mediaRecorder.start(1000);
             recordingStartedAt = Date.now();
+            recordingRoomLabel = currentRoom || 'lecture';
+            recordingStartedLabel = new Date(recordingStartedAt).toLocaleString('ko-KR');
+            recordingFileStem = createRecordingFileStem();
             document.getElementById('record_button').innerText = '녹음 중지';
             document.getElementById('recording_status').innerText = '녹음 중 · 00:00';
             recordingTimer = setInterval(() => {
@@ -938,16 +1028,25 @@
         }
 
         function stopRecording(downloadAfterStop = false) {
-            if (!mediaRecorder || mediaRecorder.state === 'inactive') return Promise.resolve();
             downloadRecordingOnStop = downloadRecordingOnStop || downloadAfterStop;
-            return new Promise(resolve => {
+            if (recordingFinalizing) return recordingStopPromise || Promise.resolve();
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') return Promise.resolve();
+            recordingCaptureUntil = Date.now() + RECORDING_TRANSCRIPT_GRACE_MS;
+            recordingFinalizing = true;
+            const recordButton = document.getElementById('record_button');
+            recordButton.disabled = true;
+            recordButton.innerText = '자막 정리 중…';
+            document.getElementById('recording_status').innerText = '마지막 자막을 정리하고 있습니다…';
+            recordingStopPromise = new Promise(resolve => {
                 recordingStopResolver = resolve;
                 mediaRecorder.stop();
             });
+            return recordingStopPromise;
         }
 
         async function toggleRecording() {
             if (currentRole !== 'host') return;
+            if (recordingFinalizing) return;
             if (mediaRecorder?.state === 'recording') {
                 await stopRecording(false);
             } else {
@@ -965,9 +1064,9 @@
             speakerTranscripts.clear();
             clearTimeout(reconnectTimer);
             clearInterval(heartbeatTimer);
-            if (mediaRecorder?.state === 'recording') {
+            if (mediaRecorder?.state === 'recording' || recordingFinalizing) {
                 await stopRecording(true);
-            } else if (recordingUrl && !recordingSaved) {
+            } else if ((recordingUrl || recordingTextUrl) && !recordingSaved) {
                 document.getElementById('recording_download').click();
             }
             if (ws) {
@@ -998,17 +1097,31 @@
             recordingChunks = [];
             recordingStartedAt = 0;
             recordingMimeType = '';
+            recordingFileStem = '';
+            recordingRoomLabel = '';
+            recordingStartedLabel = '';
+            recordingTranscriptEntries = [];
+            recordingCaptureUntil = 0;
+            recordingFinalizing = false;
+            recordingStopPromise = null;
+            recordingStopResolver = null;
             recordingSaved = false;
             if (recordingUrl) {
                 const urlToRevoke = recordingUrl;
                 setTimeout(() => URL.revokeObjectURL(urlToRevoke), 10000);
                 recordingUrl = '';
             }
+            if (recordingTextUrl) {
+                const textUrlToRevoke = recordingTextUrl;
+                setTimeout(() => URL.revokeObjectURL(textUrlToRevoke), 10000);
+                recordingTextUrl = '';
+            }
             const recordingDownload = document.getElementById('recording_download');
             recordingDownload.classList.add('hidden');
-            recordingDownload.removeAttribute('href');
-            document.getElementById('record_button').innerText = '녹음 시작';
-            document.getElementById('recording_status').innerText = '원본 음성은 이 기기에서만 녹음됩니다.';
+            const recordButton = document.getElementById('record_button');
+            recordButton.disabled = false;
+            recordButton.innerText = '녹음 시작';
+            document.getElementById('recording_status').innerText = '원본 음성과 자막 텍스트는 이 기기에서만 저장됩니다.';
             isMuted = false;
             document.getElementById('mute_button').innerText = '마이크 음소거';
             document.getElementById('active_ui').classList.add('hidden');

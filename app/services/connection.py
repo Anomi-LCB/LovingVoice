@@ -219,6 +219,11 @@ class ConnectionManager:
         room = self.active_connections.get(room_id, {})
         return [lang for lang, sockets in room.items() if sockets]
 
+    def realtime_languages(self, room_id, speaker_fallback="ko-KR"):
+        """Keep one source-caption route alive when a speaker has no audience yet."""
+        languages = self.audience_languages(room_id)
+        return languages or [speaker_fallback]
+
     def room_status(self, room_id):
         """Return public room fan-out statistics without exposing connections."""
         public_room_id = room_id

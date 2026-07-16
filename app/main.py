@@ -229,11 +229,10 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
                 if data.get("type") == "websocket.disconnect":
                     break
                 if data.get("bytes") is not None:
-                    languages = manager.audience_languages(room_id)
-                    if languages:
-                        await realtime_hub.feed(
-                            room_id, source_id, data["bytes"], languages
-                        )
+                    languages = manager.realtime_languages(room_id)
+                    await realtime_hub.feed(
+                        room_id, source_id, data["bytes"], languages
+                    )
                 elif data.get("text"):
                     try:
                         import json
