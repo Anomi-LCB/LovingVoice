@@ -97,16 +97,17 @@
         .back-button:hover { color: #2563eb; }
         .step-label { color: #64748b; font-size: .85rem; font-weight: 700; }
         .setup-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 22px; align-items: start; }
-        .form-card, .support-card { padding: 32px; border-radius: 24px; }
+        .setup-layout > *, .field-group, .password-field { min-width: 0; }
+        .form-card, .support-card { width: 100%; max-width: 100%; padding: 32px; border-radius: 24px; }
         .form-title { margin: 0; font-size: clamp(1.65rem, 4vw, 2.15rem); font-weight: 850; letter-spacing: -.035em; }
         .form-copy { margin: 10px 0 28px; color: #64748b; line-height: 1.6; }
         .field-group { margin-top: 20px; }
         .field-label { display: block; margin-bottom: 8px; font-size: .92rem; font-weight: 750; }
         .field-help { margin: 8px 0 0; color: #64748b; font-size: .78rem; line-height: 1.5; }
-        .form-control { width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #172033; outline: none; transition: border-color 160ms ease, box-shadow 160ms ease; }
+        .form-control { display: block; width: 100%; max-width: 100%; min-width: 0; min-height: 48px; padding: 0 14px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #172033; outline: none; transition: border-color 160ms ease, box-shadow 160ms ease; }
         .form-control:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.16); }
         .form-control[readonly] { background: #f1f5f9; color: #475569; }
-        .password-field { position: relative; }
+        .password-field { position: relative; width: 100%; max-width: 100%; }
         .password-field .form-control { padding-right: 64px; }
         .password-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 7px 9px; border: 0; border-radius: 8px; background: transparent; color: #64748b; font-size: .78rem; font-weight: 750; }
         .password-toggle:hover { background: #f1f5f9; color: #2563eb; }
@@ -201,6 +202,10 @@
         html[data-theme="dark"] .caption-current-label { color: #94a3b8; }
         @media (prefers-reduced-motion: reduce) {
             .history-caption { animation: none; }
+        }
+        @media (max-width: 1024px) {
+            .setup-layout { grid-template-columns: minmax(0, 1fr); }
+            .setup-layout .support-card { order: 2; }
         }
         @media (max-width: 760px) {
             .app-shell { padding: 76px 16px 24px; }
@@ -648,6 +653,48 @@
                 .slice(0, 40);
         }
 
+        function waitForRetry(delayMs) {
+            return new Promise(resolve => window.setTimeout(resolve, delayMs));
+        }
+
+        async function requestJson(path, options = {}, { retries = 1, timeoutMs = 12000 } = {}) {
+            const url = new URL(path, window.location.origin);
+            let lastError = null;
+
+            for (let attempt = 0; attempt <= retries; attempt += 1) {
+                const controller = new AbortController();
+                const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    const response = await fetch(url, {
+                        ...options,
+                        cache: 'no-store',
+                        signal: controller.signal,
+                        headers: {
+                            Accept: 'application/json',
+                            ...(options.headers || {})
+                        }
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    return { response, payload };
+                } catch (error) {
+                    lastError = error;
+                    console.warn('Room API connection failed', {
+                        path: url.pathname,
+                        attempt: attempt + 1,
+                        reason: error?.name || 'NetworkError'
+                    });
+                    if (attempt < retries) await waitForRetry(450 * (attempt + 1));
+                } finally {
+                    window.clearTimeout(timeout);
+                }
+            }
+
+            const message = lastError?.name === 'AbortError'
+                ? '서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.'
+                : '서버에 연결할 수 없습니다. 인터넷 연결을 확인한 뒤 다시 시도해주세요.';
+            throw new Error(message, { cause: lastError });
+        }
+
         function buildAudienceInviteUrl({ includePassword = false } = {}) {
             const url = new URL(window.location.href);
             url.search = '';
@@ -818,7 +865,7 @@
             saveButton.innerText = '변경 중…';
             const previousRoom = currentRoom;
             try {
-                const response = await fetch(`/api/rooms/${encodeURIComponent(previousRoom)}`, {
+                const { response, payload } = await requestJson(`/api/rooms/${encodeURIComponent(previousRoom)}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -827,7 +874,6 @@
                         room_password: newPassword
                     })
                 });
-                const payload = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(payload.detail || '방 설정을 변경할 수 없습니다.');
 
                 sessionStorage.removeItem(`lovingvoice:host-token:${previousRoom}`);
@@ -1270,12 +1316,11 @@
                     return;
                 }
                 if (!token) {
-                    const response = await fetch('/api/rooms', {
+                    const { response, payload } = await requestJson('/api/rooms', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ room_id: room, room_password: password })
                     });
-                    const payload = await response.json().catch(() => ({}));
                     if (!response.ok) {
                         throw new Error(payload.detail || '방을 시작할 수 없습니다.');
                     }
@@ -1378,8 +1423,7 @@
             joinButton.disabled = true;
             joinButton.innerText = '방 확인 중…';
             try {
-                const response = await fetch(`/api/rooms/${encodeURIComponent(room)}`);
-                const status = await response.json().catch(() => ({}));
+                const { response, payload: status } = await requestJson(`/api/rooms/${encodeURIComponent(room)}`);
                 if (!response.ok || !status.exists) {
                     throw new Error('현재 열려 있는 방을 찾을 수 없습니다. 방 이름을 확인해주세요.');
                 }
