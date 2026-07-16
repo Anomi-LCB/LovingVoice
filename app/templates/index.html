@@ -178,6 +178,11 @@
         .invite-item label { display: block; margin-bottom: 4px; color: #64748b; font-size: .72rem; font-weight: 700; }
         .invite-item strong { overflow-wrap: anywhere; }
         .invite-text { width: 100%; min-height: 112px; resize: none; padding: 12px; border: 1px solid #cbd5e1; border-radius: 12px; background: #f8fafc; color: #334155; font-size: .82rem; line-height: 1.55; }
+        .invite-share-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
+        .share-button { min-height: 44px; padding: 0 14px; border-radius: 11px; font-size: .86rem; font-weight: 800; }
+        .share-button.kakao { background: #fee500; color: #191919; }
+        .share-button.social { background: #2563eb; color: #fff; }
+        .share-button:hover { filter: brightness(.97); }
         .copy-status { min-height: 20px; margin: 10px 0 0; color: #16a34a; font-size: .82rem; }
         html[data-theme="dark"] .brand-copy, html[data-theme="dark"] .role-description, html[data-theme="dark"] .form-copy, html[data-theme="dark"] .field-help, html[data-theme="dark"] .support-copy, html[data-theme="dark"] .support-list, html[data-theme="dark"] .recording-note, html[data-theme="dark"] .caption-meta, html[data-theme="dark"] .step-label { color: #94a3b8; }
         html[data-theme="dark"] .role-card, html[data-theme="dark"] .form-control, html[data-theme="dark"] .session-chip, html[data-theme="dark"] .session-action { border-color: #475569; background: #1e293b; color: #f8fafc; }
@@ -214,6 +219,7 @@
             .control-button { flex: 1 1 calc(50% - 8px); }
             .invite-content { grid-template-columns: 1fr; }
             .invite-grid { grid-template-columns: 1fr; }
+            .invite-share-actions { grid-template-columns: 1fr; }
         }
         .pulse-red { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -405,6 +411,10 @@
                         <div class="invite-item"><label>방 비밀번호</label><strong id="invite_room_password">-</strong></div>
                     </div>
                     <textarea id="invite_text" class="invite-text" readonly aria-label="복사할 청중 초대 정보"></textarea>
+                    <div class="invite-share-actions" aria-label="초대 공유 방법">
+                        <button type="button" class="share-button kakao" onclick="shareAudienceInvite('kakao')">카카오톡으로 보내기</button>
+                        <button type="button" class="share-button social" onclick="shareAudienceInvite('social')">SNS로 공유하기</button>
+                    </div>
                     <p id="invite_copy_status" class="copy-status" role="status"></p>
                     <div class="button-row">
                         <button type="button" class="primary-button" onclick="copyAudienceLink()">초대 정보 복사</button>
@@ -650,6 +660,14 @@
             return url;
         }
 
+        function buildAudienceInvitation() {
+            const url = buildAudienceInviteUrl();
+            const invitation = currentRoomPassword
+                ? `LovingVoice 청중 초대\n방 이름: ${currentRoom}\n방 비밀번호: ${currentRoomPassword}\n입장 링크: ${url}`
+                : url.toString();
+            return { url, invitation };
+        }
+
         function renderInviteQr() {
             const qrBox = document.getElementById('invite_qr');
             qrBox.replaceChildren();
@@ -690,13 +708,8 @@
         }
 
         async function copyAudienceLink() {
-            const room = currentRoom;
-            if (!room) return;
-            const url = buildAudienceInviteUrl();
-            const roomPassword = currentRoomPassword;
-            const invitation = roomPassword
-                ? `LovingVoice 청중 초대\n방 이름: ${room}\n방 비밀번호: ${roomPassword}\n입장 링크: ${url}`
-                : url.toString();
+            if (!currentRoom) return;
+            const { invitation } = buildAudienceInvitation();
             document.getElementById('invite_text').value = invitation;
             try {
                 await navigator.clipboard.writeText(invitation);
@@ -709,10 +722,47 @@
             }
         }
 
+        async function shareAudienceInvite(target = 'social') {
+            if (!currentRoom) return;
+            const { url, invitation } = buildAudienceInvitation();
+            const status = document.getElementById('invite_copy_status');
+            const shareText = `방 이름: ${currentRoom}\n방 비밀번호: ${currentRoomPassword}`;
+            if (navigator.share) {
+                try {
+                    status.innerText = target === 'kakao'
+                        ? '공유 목록에서 카카오톡을 선택해주세요.'
+                        : '공유할 SNS 앱을 선택해주세요.';
+                    await navigator.share({
+                        title: `LovingVoice · ${currentRoom} 청중 초대`,
+                        text: shareText,
+                        url: url.toString()
+                    });
+                    status.innerText = '초대 정보를 공유했습니다.';
+                    return;
+                } catch (error) {
+                    if (error?.name === 'AbortError') {
+                        status.innerText = '';
+                        return;
+                    }
+                }
+            }
+            document.getElementById('invite_text').value = invitation;
+            try {
+                await navigator.clipboard.writeText(invitation);
+                status.innerText = target === 'kakao'
+                    ? '초대 정보를 복사했습니다. 카카오톡 대화방에 붙여넣어주세요.'
+                    : '초대 정보를 복사했습니다. 원하는 SNS에 붙여넣어주세요.';
+            } catch (error) {
+                const inviteText = document.getElementById('invite_text');
+                inviteText.focus();
+                inviteText.select();
+                status.innerText = '선택된 초대 정보를 직접 복사해주세요.';
+            }
+        }
+
         function openInviteModal() {
             if (!currentRoom || currentRole !== 'host') return;
-            const url = buildAudienceInviteUrl();
-            const invitation = `LovingVoice 청중 초대\n방 이름: ${currentRoom}\n방 비밀번호: ${currentRoomPassword}\n입장 링크: ${url}`;
+            const { invitation } = buildAudienceInvitation();
             document.getElementById('invite_room_name').innerText = currentRoom;
             document.getElementById('invite_room_password').innerText = currentRoomPassword;
             document.getElementById('invite_text').value = invitation;
