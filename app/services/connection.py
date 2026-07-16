@@ -14,6 +14,9 @@ class ConnectionManager:
         # Late joiners receive only a small, recent context window. Count, age,
         # item length and serialized payload are all bounded independently.
         self.subtitle_history = {}
+        # A live room keeps its original internal channel when its public name
+        # changes. New public names resolve to that same channel.
+        self.room_aliases = {}
         self.history_limit = max(1, int(os.getenv("SUBTITLE_HISTORY_LIMIT", "30")))
         self.history_max_age_seconds = max(
             30, int(os.getenv("SUBTITLE_HISTORY_MAX_AGE_SECONDS", "300"))
@@ -27,6 +30,7 @@ class ConnectionManager:
 
     async def add_speaker(self, room_id, websocket):
         """방에 강연자를 추가한다. Realtime 모드는 인원 제한을 두지 않는다."""
+        room_id = self.resolve_room_id(room_id)
         if room_id not in self.active_speakers:
             self.active_speakers[room_id] = []
 
@@ -35,6 +39,7 @@ class ConnectionManager:
 
     def remove_speaker(self, room_id, websocket):
         """강연자 세션 제거"""
+        room_id = self.resolve_room_id(room_id)
         if room_id in self.active_speakers:
             try:
                 self.active_speakers[room_id].remove(websocket)
@@ -44,6 +49,7 @@ class ConnectionManager:
                 pass
 
     async def add_audience(self, room_id, lang, websocket, *, accept=True):
+        room_id = self.resolve_room_id(room_id)
         if room_id not in self.active_connections:
             self.active_connections[room_id] = {}
         if lang not in self.active_connections[room_id]:
@@ -53,6 +59,7 @@ class ConnectionManager:
             await websocket.accept()
 
     def remove_audience(self, room_id, lang, websocket):
+        room_id = self.resolve_room_id(room_id)
         try:
             if room_id in self.active_connections and lang in self.active_connections[room_id]:
                 self.active_connections[room_id][lang].remove(websocket)
@@ -68,6 +75,7 @@ class ConnectionManager:
         import logging
         logger = logging.getLogger("LovingVoice")
         
+        room_id = self.resolve_room_id(room_id)
         room = self.active_connections.get(room_id, {})
         if not room:
             logger.error(f"[브로드캐스트 실패] {room_id}번 방에 연결된 청중이 없습니다.")
@@ -113,22 +121,27 @@ class ConnectionManager:
             await asyncio.gather(*tasks)
 
     async def broadcast_json_to_room(self, room_id, data):
-        """방에 있는 모든 청중에게 JSON 메시지를 실시간 전송"""
+        """Send a room-wide event to audiences and the room's speakers."""
+        room_id = self.resolve_room_id(room_id)
         room = self.active_connections.get(room_id, {})
-        if not room:
-            return
-
         send_tasks = []
+        seen_websockets = set()
         for websockets in room.values():
             for ws in websockets:
-                if ws.client_state.name == "CONNECTED":
+                if ws.client_state.name == "CONNECTED" and id(ws) not in seen_websockets:
                     send_tasks.append(ws.send_json(data))
+                    seen_websockets.add(id(ws))
+        for ws in self.active_speakers.get(room_id, []):
+            if ws.client_state.name == "CONNECTED" and id(ws) not in seen_websockets:
+                send_tasks.append(ws.send_json(data))
+                seen_websockets.add(id(ws))
         
         if send_tasks:
             await asyncio.gather(*send_tasks, return_exceptions=True)
 
     async def broadcast_json_to_language(self, room_id, lang, data):
         """Send a realtime event only to listeners of one output language."""
+        room_id = self.resolve_room_id(room_id)
         room = self.active_connections.get(room_id, {})
         websockets = room.get(lang, [])
         send_tasks = [
@@ -141,6 +154,7 @@ class ConnectionManager:
 
     async def record_subtitle(self, room_id, lang, source_id, text):
         """Store a completed translation and return its public event payload."""
+        room_id = self.resolve_room_id(room_id)
         text = text.strip()
         if not text:
             return None
@@ -159,6 +173,7 @@ class ConnectionManager:
 
     def get_subtitle_history(self, room_id, lang):
         """Return newest context within the configured count, age and byte budget."""
+        room_id = self.resolve_room_id(room_id)
         self._prune_subtitle_history(room_id, lang)
         items = self.subtitle_history.get(room_id, {}).get(lang, [])
         selected = []
@@ -179,6 +194,7 @@ class ConnectionManager:
         return selected
 
     def _prune_subtitle_history(self, room_id, lang):
+        room_id = self.resolve_room_id(room_id)
         language_history = self.subtitle_history.get(room_id, {}).get(lang, [])
         if not language_history:
             return
@@ -199,11 +215,14 @@ class ConnectionManager:
 
     def audience_languages(self, room_id):
         """Return distinct language routes, never one entry per listener."""
+        room_id = self.resolve_room_id(room_id)
         room = self.active_connections.get(room_id, {})
         return [lang for lang, sockets in room.items() if sockets]
 
     def room_status(self, room_id):
         """Return public room fan-out statistics without exposing connections."""
+        public_room_id = room_id
+        room_id = self.resolve_room_id(room_id)
         room = self.active_connections.get(room_id, {})
         audience_by_language = {
             lang: len(sockets) for lang, sockets in room.items() if sockets
@@ -214,7 +233,7 @@ class ConnectionManager:
             if count:
                 history_counts[lang] = count
         return {
-            "room_id": room_id,
+            "room_id": public_room_id,
             "exists": room_id in self.active_speakers,
             "speaker_count": len(self.active_speakers.get(room_id, [])),
             "audience_count": sum(audience_by_language.values()),
@@ -227,3 +246,13 @@ class ConnectionManager:
                 "max_bytes": self.history_max_bytes,
             },
         }
+
+    def resolve_room_id(self, room_id):
+        """Return the stable internal channel for a public room name."""
+        return self.room_aliases.get(room_id, room_id)
+
+    def register_room_alias(self, current_room_id, new_room_id):
+        """Route a renamed public room to its existing live channel."""
+        internal_room_id = self.resolve_room_id(current_room_id)
+        self.room_aliases[new_room_id] = internal_room_id
+        return internal_room_id

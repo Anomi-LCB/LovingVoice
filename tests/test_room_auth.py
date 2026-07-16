@@ -43,3 +43,26 @@ def test_expired_room_rejects_both_host_and_audience():
     assert not manager.room_exists(room["room_id"])
     assert not manager.verify_room_password(room["room_id"], "Expired-Secret")
     assert not manager.verify_speaker_token(room["room_id"], room["speaker_token"])
+
+
+def test_room_name_and_password_can_be_updated_by_host_flow():
+    manager = RoomTokenManager(secret="token-secret")
+    original = manager.create_room("기존방", "Old-Secret")
+
+    updated = manager.update_room("기존방", "새로운방", "New-Secret")
+
+    assert not manager.room_exists("기존방")
+    assert manager.room_exists("새로운방")
+    assert not manager.verify_speaker_token("기존방", original["speaker_token"])
+    assert manager.verify_speaker_token("새로운방", updated["speaker_token"])
+    assert not manager.verify_room_password("새로운방", "Old-Secret")
+    assert manager.verify_room_password("새로운방", "New-Secret")
+
+
+def test_room_update_rejects_an_existing_new_name():
+    manager = RoomTokenManager(secret="token-secret")
+    manager.create_room("first", "First-Secret")
+    manager.create_room("second", "Second-Secret")
+
+    with pytest.raises(ValueError):
+        manager.update_room("first", "second", "Updated-Secret")

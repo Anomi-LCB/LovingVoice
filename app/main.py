@@ -80,7 +80,9 @@ async def room_status(room_id: str):
     status["exists"] = room_tokens.room_exists(room_id)
     status.update(
         {
-            "translation_routes": realtime_hub.route_status(room_id),
+            "translation_routes": realtime_hub.route_status(
+                manager.resolve_room_id(room_id)
+            ),
             "route_policy": "one_per_source_channel_and_language",
         }
     )
@@ -88,6 +90,12 @@ async def room_status(room_id: str):
 
 
 class RoomCreateRequest(BaseModel):
+    room_id: str
+    room_password: str
+
+
+class RoomUpdateRequest(BaseModel):
+    speaker_token: str
     room_id: str
     room_password: str
 
@@ -129,6 +137,40 @@ async def create_room(request: RoomCreateRequest):
         "audience_path": f"/?room={quote(room_id)}&mode=audience",
     }
 
+
+@app.patch("/api/rooms/{current_room_id}")
+async def update_room(current_room_id: str, request: RoomUpdateRequest):
+    """Update a live room's public name and audience password."""
+    if not room_tokens.verify_speaker_token(
+        current_room_id, request.speaker_token
+    ):
+        raise HTTPException(status_code=403, detail="방 설정 변경 권한이 없습니다.")
+
+    new_room_id = normalize_room_id(request.room_id)
+    new_password = request.room_password.strip()
+    if not 4 <= len(new_password) <= 32:
+        raise HTTPException(
+            status_code=422,
+            detail="방 비밀번호는 4~32자로 입력하세요.",
+        )
+    try:
+        room = room_tokens.update_room(
+            current_room_id, new_room_id, new_password
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="방을 찾을 수 없습니다.") from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=409, detail="이미 사용 중인 방 이름입니다."
+        ) from error
+
+    if new_room_id != current_room_id:
+        manager.register_room_alias(current_room_id, new_room_id)
+    return {
+        **room,
+        "audience_path": f"/?room={quote(new_room_id)}&mode=audience",
+    }
+
 import queue
 import threading
 
@@ -155,7 +197,7 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
     await manager.add_speaker(room_id, websocket)
     source_id = uuid.uuid4().hex
     manager.voice_modes = getattr(manager, 'voice_modes', {})
-    manager.voice_modes[room_id] = voice_mode
+    manager.voice_modes[manager.resolve_room_id(room_id)] = voice_mode
     logger.info(f"Speaker connected to room: {room_id} (voice_mode={voice_mode})")
     await websocket.send_json({"type": "authenticated", "room_id": room_id})
     await manager.broadcast_json_to_room(

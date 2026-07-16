@@ -110,3 +110,24 @@ async def test_late_join_snapshot_respects_payload_budget(monkeypatch):
     assert 0 < len(snapshot) < 10
     assert len(serialized.encode("utf-8")) <= 1024
     assert snapshot[-1]["text"].startswith("9:")
+
+
+@pytest.mark.asyncio
+async def test_renamed_room_keeps_live_channel_and_speaker_events():
+    manager = ConnectionManager()
+    speaker = FakeAudience()
+    existing_audience = FakeAudience()
+    new_audience = FakeAudience()
+
+    await manager.add_speaker("original", speaker)
+    await manager.add_audience("original", "ko-KR", existing_audience)
+    manager.register_room_alias("original", "renamed")
+    await manager.add_audience("renamed", "en-US", new_audience)
+
+    message = {"type": "transcript_delta", "text": "speaker caption"}
+    await manager.broadcast_json_to_room("original", message)
+
+    assert speaker.messages == [message]
+    assert existing_audience.messages == [message]
+    assert new_audience.messages == [message]
+    assert manager.room_status("renamed")["audience_count"] == 2

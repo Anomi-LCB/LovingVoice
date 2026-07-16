@@ -53,13 +53,14 @@
             top: 16px;
             right: 16px;
             z-index: 50;
-            min-width: 92px;
-            padding: 8px 14px;
-            border-radius: 999px;
+            width: 42px;
+            height: 42px;
+            padding: 0;
+            border-radius: 50%;
             border: 1px solid #cbd5e1;
             background: rgba(255, 255, 255, 0.9);
             color: #334155;
-            font-size: 0.875rem;
+            font-size: 1.05rem;
             font-weight: 700;
             box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
             transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
@@ -138,6 +139,7 @@
         .caption-stage { height: min(62vh, 580px); min-height: 420px; margin-top: 18px; padding: 18px; border-radius: 24px; }
         .caption-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px 14px; color: #64748b; font-size: .78rem; }
         .host-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; padding: 16px; border-radius: 18px; }
+        .host-controls.hidden { display: none; }
         .control-button { min-height: 44px; padding: 0 16px; border-radius: 11px; background: #e2e8f0; color: #243047; font-weight: 780; }
         .control-button.primary { background: #1d4ed8; color: #fff; }
         .control-button.danger { background: #dc2626; color: #fff; }
@@ -186,7 +188,7 @@
     </style>
 </head>
 <body class="min-h-screen">
-    <button id="theme_toggle" type="button" class="theme-toggle" onclick="toggleTheme()" aria-pressed="false">다크 모드</button>
+    <button id="theme_toggle" type="button" class="theme-toggle" onclick="toggleTheme()" aria-pressed="false" title="다크 모드로 전환">☾</button>
     <main class="app-shell">
         <section id="role_screen" class="screen role-screen">
             <div class="role-wrap">
@@ -311,6 +313,7 @@
                 </div>
                 <div class="session-actions">
                     <button id="invite_button" type="button" onclick="openInviteModal()" class="session-action primary">청중 초대</button>
+                    <button id="room_settings_button" type="button" onclick="openRoomSettings()" class="session-action">방 설정</button>
                     <div id="room_display" class="session-chip">방: -</div>
                     <button type="button" onclick="exitSession()" class="session-action">나가기</button>
                 </div>
@@ -358,6 +361,33 @@
         </section>
     </div>
 
+    <div id="room_settings_modal" class="modal-layer hidden" role="dialog" aria-modal="true" aria-labelledby="room_settings_title">
+        <div class="modal-backdrop" onclick="closeRoomSettings()"></div>
+        <form class="modal-card" onsubmit="event.preventDefault(); saveRoomSettings();">
+            <button type="button" class="modal-close" onclick="closeRoomSettings()" aria-label="방 설정 닫기">×</button>
+            <span class="step-label">방송을 유지한 채 변경</span>
+            <h2 id="room_settings_title" class="form-title mt-2">방 설정</h2>
+            <p class="form-copy">변경 후 새 청중은 새 방 이름과 비밀번호로 입장합니다.</p>
+            <div class="field-group">
+                <label class="field-label" for="room_settings_name">방 이름</label>
+                <input id="room_settings_name" class="form-control" type="text" maxlength="40" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field-group">
+                <label class="field-label" for="room_settings_password">청중 입장 비밀번호</label>
+                <div class="password-field">
+                    <input id="room_settings_password" class="form-control" type="password" minlength="4" maxlength="32" autocomplete="new-password" autocapitalize="none" spellcheck="false">
+                    <button type="button" class="password-toggle" onclick="togglePassword('room_settings_password', this)">보기</button>
+                </div>
+            </div>
+            <p id="room_settings_error" class="form-error" role="alert"></p>
+            <p id="room_settings_status" class="copy-status" role="status"></p>
+            <div class="button-row">
+                <button id="room_settings_save" type="submit" class="primary-button">변경 저장</button>
+                <button type="button" class="secondary-button" onclick="closeRoomSettings()">취소</button>
+            </div>
+        </form>
+    </div>
+
     <script>
         let ws;
         let audioCtx;
@@ -371,6 +401,8 @@
         let currentRoom = '';
         let currentRoomPassword = '';
         let currentRole = '';
+        let speakerCaptionDisplay = null;
+        const speakerTranscripts = new Map();
         let isLeaving = false;
         let speakerAuthenticated = false;
         let isMuted = false;
@@ -391,9 +423,10 @@
             const toggle = document.getElementById('theme_toggle');
             if (toggle) {
                 const isDark = nextTheme === 'dark';
-                toggle.innerText = isDark ? '라이트 모드' : '다크 모드';
+                toggle.innerText = isDark ? '☀' : '☾';
                 toggle.setAttribute('aria-pressed', String(isDark));
                 toggle.setAttribute('aria-label', isDark ? '라이트 모드로 전환' : '다크 모드로 전환');
+                toggle.title = isDark ? '라이트 모드로 전환' : '다크 모드로 전환';
             }
             if (persist) {
                 try {
@@ -506,12 +539,14 @@
             showScreen('active_ui');
             document.getElementById('speaker_controls').classList.toggle('hidden', !isSpeaker);
             document.getElementById('invite_button').classList.toggle('hidden', !isSpeaker);
+            document.getElementById('room_settings_button').classList.toggle('hidden', !isSpeaker);
             document.getElementById('session_role_label').innerText = isSpeaker ? '강연자 방송' : '청중 통역';
             document.getElementById('room_display').innerText = '방: ' + currentRoom;
             document.getElementById('subtitle_area').innerText = isSpeaker
                 ? '강연을 시작하면 청중에게 실시간 통역이 전송됩니다.'
                 : '강연자의 다음 실시간 통역을 기다리는 중…';
             document.getElementById('route_badge').innerText = isSpeaker ? '언어별 공유 전송' : '공유 언어 채널';
+            if (isSpeaker) initializeSpeakerCaptions();
         }
 
         function cleanRoomId(value) {
@@ -564,8 +599,121 @@
             document.getElementById('invite_modal').classList.add('hidden');
         }
 
+        function openRoomSettings() {
+            if (currentRole !== 'host' || !currentRoom) return;
+            document.getElementById('room_settings_name').value = currentRoom;
+            const passwordInput = document.getElementById('room_settings_password');
+            passwordInput.type = 'password';
+            passwordInput.value = currentRoomPassword;
+            document.getElementById('room_settings_error').innerText = '';
+            document.getElementById('room_settings_status').innerText = '';
+            document.getElementById('room_settings_modal').classList.remove('hidden');
+            document.getElementById('room_settings_name').focus();
+        }
+
+        function closeRoomSettings() {
+            document.getElementById('room_settings_modal').classList.add('hidden');
+        }
+
+        async function saveRoomSettings() {
+            const newRoom = cleanRoomId(document.getElementById('room_settings_name').value);
+            const newPassword = document.getElementById('room_settings_password').value.trim();
+            const errorBox = document.getElementById('room_settings_error');
+            const statusBox = document.getElementById('room_settings_status');
+            const saveButton = document.getElementById('room_settings_save');
+            errorBox.innerText = '';
+            statusBox.innerText = '';
+            if (newRoom.length < 2) {
+                errorBox.innerText = '방 이름을 2자 이상 입력하세요.';
+                return;
+            }
+            if (newPassword.length < 4 || newPassword.length > 32) {
+                errorBox.innerText = '청중 입장 비밀번호를 4~32자로 입력하세요.';
+                return;
+            }
+            const currentToken = sessionStorage.getItem(`lovingvoice:host-token:${currentRoom}`) || '';
+            if (!currentToken) {
+                errorBox.innerText = '방 설정 변경 권한이 만료되었습니다. 방송을 다시 시작해주세요.';
+                return;
+            }
+
+            saveButton.disabled = true;
+            saveButton.innerText = '변경 중…';
+            const previousRoom = currentRoom;
+            try {
+                const response = await fetch(`/api/rooms/${encodeURIComponent(previousRoom)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        speaker_token: currentToken,
+                        room_id: newRoom,
+                        room_password: newPassword
+                    })
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload.detail || '방 설정을 변경할 수 없습니다.');
+
+                sessionStorage.removeItem(`lovingvoice:host-token:${previousRoom}`);
+                sessionStorage.removeItem(`lovingvoice:room-password:${previousRoom}`);
+                sessionStorage.setItem(`lovingvoice:host-token:${payload.room_id}`, payload.speaker_token);
+                sessionStorage.setItem(`lovingvoice:room-password:${payload.room_id}`, newPassword);
+                currentRoom = payload.room_id;
+                currentRoomPassword = newPassword;
+                document.getElementById('host_room_id').value = currentRoom;
+                document.getElementById('host_room_password').value = currentRoomPassword;
+                document.getElementById('room_display').innerText = `방: ${currentRoom}`;
+                statusBox.innerText = '방 이름과 비밀번호를 변경했습니다.';
+                setStatus('online', '방 설정 변경 완료 · 방송 유지 중');
+                setTimeout(closeRoomSettings, 700);
+            } catch (error) {
+                errorBox.innerText = error.message || '방 설정을 변경할 수 없습니다.';
+            } finally {
+                saveButton.disabled = false;
+                saveButton.innerText = '변경 저장';
+            }
+        }
+
+        function appendSpeakerHistory(text) {
+            if (!text) return;
+            const history = document.getElementById('history_area');
+            const item = document.createElement('p');
+            item.className = 'border-l-2 border-slate-600 pl-3';
+            item.innerText = text;
+            history.appendChild(item);
+            while (history.childElementCount > 30) history.firstElementChild?.remove();
+            history.scrollTop = history.scrollHeight;
+        }
+
+        function initializeSpeakerCaptions() {
+            speakerCaptionDisplay?.dispose();
+            speakerTranscripts.clear();
+            speakerCaptionDisplay = createCaptionDisplayController(
+                document.getElementById('subtitle_area'),
+                appendSpeakerHistory
+            );
+        }
+
+        function handleSpeakerCaptionEvent(data) {
+            if (!speakerCaptionDisplay) return;
+            const sourceId = data.source_id || 'default';
+            if (data.type === 'transcript_delta') {
+                if (!speakerTranscripts.has(sourceId)) speakerCaptionDisplay.startCaption();
+                const text = (speakerTranscripts.get(sourceId) || '') + (data.text || '');
+                speakerTranscripts.set(sourceId, text);
+                speakerCaptionDisplay.updateCaption(text);
+            } else if (data.type === 'transcript_done') {
+                const completed = speakerTranscripts.get(sourceId) || '';
+                if (completed) speakerCaptionDisplay.completeCaption(completed);
+                speakerTranscripts.delete(sourceId);
+            } else if (data.type === 'transcript') {
+                speakerCaptionDisplay.startCaption();
+                speakerCaptionDisplay.updateCaption(data.text || '', { sourcePreview: !data.is_final });
+                if (data.is_final) speakerCaptionDisplay.completeCaption(data.text || '');
+            }
+        }
+
         function toggleMute() {
-            if (!micStream) return;
+            if (currentRole !== 'host' || !micStream) return;
             isMuted = !isMuted;
             micStream.getAudioTracks().forEach(track => { track.enabled = !isMuted; });
             document.getElementById('mute_button').innerText = isMuted ? '마이크 켜기' : '마이크 음소거';
@@ -608,6 +756,7 @@
         }
 
         function startRecording() {
+            if (currentRole !== 'host') return;
             if (!window.MediaRecorder) {
                 document.getElementById('recording_status').innerText = '이 브라우저는 녹음을 지원하지 않습니다. 최신 브라우저를 사용해주세요.';
                 return;
@@ -685,6 +834,7 @@
         }
 
         async function toggleRecording() {
+            if (currentRole !== 'host') return;
             if (mediaRecorder?.state === 'recording') {
                 await stopRecording(false);
             } else {
@@ -696,6 +846,10 @@
             isLeaving = true;
             speakerAuthenticated = false;
             closeInviteModal();
+            closeRoomSettings();
+            speakerCaptionDisplay?.dispose();
+            speakerCaptionDisplay = null;
+            speakerTranscripts.clear();
             clearTimeout(reconnectTimer);
             clearInterval(heartbeatTimer);
             if (mediaRecorder?.state === 'recording') {
@@ -856,6 +1010,9 @@
                 };
                 ws.onmessage = (event) => {
                     const data = JSON.parse(event.data);
+                    if (data.type === 'transcript_delta' || data.type === 'transcript_done' || data.type === 'transcript') {
+                        handleSpeakerCaptionEvent(data);
+                    }
                     if (data.type === 'authenticated') {
                         speakerAuthenticated = true;
                         setStatus('online', engine === 'openai' ? '실시간 방송 중 · 마이크 켜짐' : '방송 중 · 마이크 켜짐');
@@ -1228,7 +1385,7 @@
         }
 
         function sendTestAudio() {
-            if (speakerAuthenticated && ws && ws.readyState === WebSocket.OPEN) {
+            if (currentRole === 'host' && speakerAuthenticated && ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'test_audio' }));
             }
         }
@@ -1259,8 +1416,9 @@
         });
 
         window.addEventListener('keydown', event => {
-            if (event.key === 'Escape' && !document.getElementById('invite_modal').classList.contains('hidden')) {
-                closeInviteModal();
+            if (event.key === 'Escape') {
+                if (!document.getElementById('room_settings_modal').classList.contains('hidden')) closeRoomSettings();
+                else if (!document.getElementById('invite_modal').classList.contains('hidden')) closeInviteModal();
             }
         });
     </script>
