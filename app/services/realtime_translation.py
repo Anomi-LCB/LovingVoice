@@ -13,7 +13,9 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import os
+import time
 from collections.abc import Awaitable, Callable, Iterable
 
 import websockets
@@ -30,20 +32,17 @@ CompletionCallback = Callable[
 LANGUAGE_CODES = {
     "ko-KR": "ko",
     "en-US": "en",
-    "en-GB": "en",
-    "zh-TW": "zh",
     "zh-CN": "zh",
     "ja-JP": "ja",
     "fr-FR": "fr",
     "de-DE": "de",
     "es-ES": "es",
     "pt-BR": "pt",
+    "ru-RU": "ru",
+    "hi-IN": "hi",
+    "id-ID": "id",
+    "it-IT": "it",
     "vi-VN": "vi",
-    "ta-IN": "ta",
-    "ne-NP": "ne",
-    "mn-MN": "mn",
-    "my-MM": "my",
-    "km-KH": "km",
 }
 
 
@@ -62,13 +61,19 @@ class OpenAITranslationSession:
         self.on_event = on_event
         self.api_key = api_key
         self.model = model
-        # 20 ms frames with a one-second safety buffer. If upstream networking
-        # stalls, dropping the oldest audio preserves live latency instead of
-        # replaying an ever-growing backlog several seconds late.
-        self.audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=50)
+        # Keep only a short window of 20 ms input frames. Live interpretation is
+        # more useful with a tiny discontinuity than audio replayed seconds late.
+        backlog_ms = max(
+            100, min(2000, int(os.getenv("OPENAI_REALTIME_AUDIO_BACKLOG_MS", "400")))
+        )
+        self.audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue(
+            maxsize=math.ceil(backlog_ms / 20)
+        )
         self.task: asyncio.Task | None = None
         self.closed = False
         self.dropped_frames = 0
+        self.first_audio_sent_at: float | None = None
+        self.first_output_logged = False
 
     def start(self) -> None:
         if self.task is None or self.task.done():
@@ -136,14 +141,26 @@ class OpenAITranslationSession:
             open_timeout=15,
             ping_interval=20,
             ping_timeout=20,
+            close_timeout=5,
+            compression=None,
+            max_queue=32,
+            write_limit=32 * 1024,
             max_size=8 * 1024 * 1024,
         ) as socket:
+            self.first_audio_sent_at = None
+            self.first_output_logged = False
             await socket.send(
                 json.dumps(
                     {
                         "type": "session.update",
                         "session": {
                             "audio": {
+                                "input": {
+                                    "transcription": {
+                                        "model": "gpt-realtime-whisper"
+                                    },
+                                    "noise_reduction": {"type": "near_field"},
+                                },
                                 "output": {"language": self.target_language},
                             }
                         },
@@ -175,6 +192,8 @@ class OpenAITranslationSession:
                 task.cancel()
             for task in done:
                 task.result()
+            if not self.closed:
+                raise ConnectionError("OpenAI Realtime socket closed unexpectedly")
 
     async def _send_audio(self, socket) -> None:
         while True:
@@ -185,6 +204,9 @@ class OpenAITranslationSession:
                 except websockets.ConnectionClosed:
                     pass
                 return
+            if self.first_audio_sent_at is None:
+                self.first_audio_sent_at = time.monotonic()
+                self.first_output_logged = False
             await socket.send(
                 json.dumps(
                     {
@@ -201,6 +223,18 @@ class OpenAITranslationSession:
             if event_type == "error":
                 error = event.get("error", {})
                 raise RuntimeError(error.get("message", "Unknown OpenAI Realtime error"))
+            if (
+                event_type == "session.output_audio.delta"
+                and self.first_audio_sent_at is not None
+                and not self.first_output_logged
+            ):
+                latency_ms = round((time.monotonic() - self.first_audio_sent_at) * 1000)
+                logger.info(
+                    "Realtime first translated audio (%s): %d ms",
+                    self.target_language,
+                    latency_ms,
+                )
+                self.first_output_logged = True
             await self.on_event(event)
             if event_type == "session.closed":
                 self.closed = True
@@ -232,6 +266,7 @@ class RealtimeTranslationHub:
             tuple[str, str, str], OpenAITranslationSession
         ] = {}
         self.transcript_buffers: dict[tuple[str, str, str], str] = {}
+        self.source_transcript_buffers: dict[tuple[str, str], str] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -262,6 +297,33 @@ class RealtimeTranslationHub:
         sessions = await self._sync_languages(room_id, source_id, languages)
         if sessions:
             await asyncio.gather(*(session.feed(pcm16) for session in sessions))
+
+    async def prepare(
+        self, room_id: str, source_id: str, languages: Iterable[str]
+    ) -> None:
+        """Open translation routes before the first microphone frame arrives."""
+        if not self.available:
+            return
+        await self._sync_languages(room_id, source_id, languages)
+
+    async def prepare_language(self, room_id: str, language: str) -> None:
+        """Warm a new audience language for every active source in the room."""
+        if not self.available or language not in LANGUAGE_CODES:
+            return
+        async with self._lock:
+            source_languages: dict[str, set[str]] = {}
+            for room, source, current_language in self.sessions:
+                if room == room_id:
+                    source_languages.setdefault(source, set()).add(current_language)
+        if source_languages:
+            await asyncio.gather(
+                *(
+                    self._sync_languages(
+                        room_id, source, current_languages | {language}
+                    )
+                    for source, current_languages in source_languages.items()
+                )
+            )
 
     async def _sync_languages(
         self, room_id: str, source_id: str, languages: Iterable[str]
@@ -364,6 +426,11 @@ class RealtimeTranslationHub:
                 None,
             )
             if language == primary:
+                source_key = (room_id, source_id)
+                self.source_transcript_buffers[source_key] = (
+                    self.source_transcript_buffers.get(source_key, "")
+                    + event.get("delta", "")
+                )
                 await self.on_room_event(
                     room_id,
                     {
@@ -382,8 +449,19 @@ class RealtimeTranslationHub:
                 None,
             )
             if language == primary:
+                source_key = (room_id, source_id)
+                completed_text = self.source_transcript_buffers.pop(
+                    source_key, ""
+                ).strip()
+                if not completed_text:
+                    completed_text = str(event.get("transcript", "")).strip()
                 await self.on_room_event(
-                    room_id, {"type": "transcript_done", "source_id": source_id}
+                    room_id,
+                    {
+                        "type": "transcript_done",
+                        "source_id": source_id,
+                        "text": completed_text,
+                    },
                 )
         elif event_type == "engine_status":
             await self.on_language_event(
@@ -404,6 +482,7 @@ class RealtimeTranslationHub:
             speaker_sessions = [self.sessions.pop(key) for key in keys]
             for key in keys:
                 self.transcript_buffers.pop(key, None)
+            self.source_transcript_buffers.pop((room_id, source_id), None)
         if speaker_sessions:
             await asyncio.gather(
                 *(session.close() for session in speaker_sessions),
@@ -416,6 +495,10 @@ class RealtimeTranslationHub:
             room_sessions = [self.sessions.pop(key) for key in keys]
             for key in keys:
                 self.transcript_buffers.pop(key, None)
+            for source_key in [
+                key for key in self.source_transcript_buffers if key[0] == room_id
+            ]:
+                self.source_transcript_buffers.pop(source_key, None)
         if room_sessions:
             await asyncio.gather(
                 *(session.close() for session in room_sessions),

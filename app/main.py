@@ -10,7 +10,7 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 from app.services.speech_engine import LovingVoiceEngine
 from app.services.connection import ConnectionManager
-from app.services.realtime_translation import RealtimeTranslationHub
+from app.services.realtime_translation import LANGUAGE_CODES, RealtimeTranslationHub
 from app.services.room_auth import RoomTokenManager
 
 # .env 파일 로드
@@ -28,8 +28,8 @@ legacy_engine = None
 manager = ConnectionManager()
 room_tokens = RoomTokenManager()
 realtime_hub = RealtimeTranslationHub(
-    manager.broadcast_json_to_room,
-    manager.broadcast_json_to_language,
+    manager.queue_json_to_room,
+    manager.queue_json_to_language,
     manager.record_subtitle,
 )
 
@@ -43,7 +43,9 @@ def get_legacy_engine():
 
 @app.on_event("shutdown")
 async def shutdown_realtime_hub():
-    await realtime_hub.close()
+    await asyncio.gather(
+        realtime_hub.close(), manager.close_realtime_fanout()
+    )
 
 @app.get("/")
 async def get_index():
@@ -69,7 +71,7 @@ async def health():
         "status": "ok",
         "realtime_available": realtime_hub.available,
         "realtime_model": realtime_hub.model,
-        "realtime_mode": "max_performance",
+        "realtime_mode": "ultra_low_latency_shared",
         "active_translation_sessions": realtime_hub.active_session_count,
     }
 
@@ -199,10 +201,6 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
     manager.voice_modes = getattr(manager, 'voice_modes', {})
     manager.voice_modes[manager.resolve_room_id(room_id)] = voice_mode
     logger.info(f"Speaker connected to room: {room_id} (voice_mode={voice_mode})")
-    await websocket.send_json({"type": "authenticated", "room_id": room_id})
-    await manager.broadcast_json_to_room(
-        room_id, {"type": "room_status", **manager.room_status(room_id)}
-    )
 
     if translation_engine == "openai":
         if not realtime_hub.available:
@@ -216,6 +214,16 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
             manager.remove_speaker(room_id, websocket)
             return
 
+        await realtime_hub.prepare(
+            room_id, source_id, manager.realtime_languages(room_id)
+        )
+
+    await websocket.send_json({"type": "authenticated", "room_id": room_id})
+    await manager.broadcast_json_to_room(
+        room_id, {"type": "room_status", **manager.room_status(room_id)}
+    )
+
+    if translation_engine == "openai":
         await websocket.send_json(
             {
                 "type": "engine_status",
@@ -400,6 +408,9 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
 @app.websocket("/ws/audience/{room_id}/{lang}")
 async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
     await websocket.accept()
+    if lang not in LANGUAGE_CODES:
+        await websocket.close(code=4004, reason="Unsupported translation language")
+        return
     try:
         auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=8)
     except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
@@ -413,6 +424,7 @@ async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
         return
 
     await manager.add_audience(room_id, lang, websocket, accept=False)
+    await realtime_hub.prepare_language(manager.resolve_room_id(room_id), lang)
     await websocket.send_json(
         {
             "type": "history_snapshot",

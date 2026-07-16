@@ -331,15 +331,17 @@
                         <select id="audience_lang_select" class="form-control">
                             <option value="ko-KR">한국어</option>
                             <option value="en-US">English</option>
-                            <option value="zh-TW">繁體中文</option>
-                            <option value="zh-CN">简体中文</option>
+                            <option value="zh-CN">中文</option>
                             <option value="ja-JP">日本語</option>
+                            <option value="es-ES">Español</option>
+                            <option value="pt-BR">Português</option>
+                            <option value="fr-FR">Français</option>
+                            <option value="de-DE">Deutsch</option>
+                            <option value="ru-RU">Русский</option>
+                            <option value="hi-IN">हिन्दी</option>
+                            <option value="id-ID">Bahasa Indonesia</option>
+                            <option value="it-IT">Italiano</option>
                             <option value="vi-VN">Tiếng Việt (베트남어)</option>
-                            <option value="ta-IN">தமிழ் (타밀어)</option>
-                            <option value="ne-NP">नेपाली (네팔어)</option>
-                            <option value="mn-MN">Монгол (몽골어)</option>
-                            <option value="my-MM">မြန်မာ (버마어)</option>
-                            <option value="km-KH">ខ្មែរ (크메르어)</option>
                         </select>
                         <p class="field-help">같은 언어를 선택한 청중은 하나의 번역 채널을 공유합니다.</p>
                     </div>
@@ -471,6 +473,7 @@
         let workletNode;
         let micStream;
         const nextPlaybackTimes = new Map();
+        const scheduledPlaybackSources = new Map();
         let reconnectTimer;
         let heartbeatTimer;
         let audienceConfig;
@@ -502,6 +505,8 @@
         const COMPLETED_CAPTION_HOLD_MS = 2200;
         const AUDIENCE_HISTORY_MAX_ITEMS = 20;
         const RECORDING_TRANSCRIPT_GRACE_MS = 1600;
+        const PLAYBACK_START_LEAD_SECONDS = 0.012;
+        const PLAYBACK_MAX_QUEUE_SECONDS = 0.65;
 
         function applyTheme(theme, { persist = true } = {}) {
             const nextTheme = theme === 'dark' ? 'dark' : 'light';
@@ -946,7 +951,7 @@
                 speakerTranscripts.set(sourceId, text);
                 speakerCaptionDisplay.updateCaption(text);
             } else if (data.type === 'transcript_done') {
-                const completed = speakerTranscripts.get(sourceId) || '';
+                const completed = data.text || speakerTranscripts.get(sourceId) || '';
                 if (completed) {
                     speakerCaptionDisplay.completeCaption(completed);
                     captureRecordingTranscript(completed);
@@ -1225,6 +1230,7 @@
                 playbackCtx = null;
             }
             nextPlaybackTimes.clear();
+            scheduledPlaybackSources.clear();
             clearInterval(recordingTimer);
             recordingTimer = null;
             mediaRecorder = null;
@@ -1305,8 +1311,41 @@
             source.buffer = buffer;
             source.connect(ctx.destination);
             const now = ctx.currentTime;
+            let scheduled = (scheduledPlaybackSources.get(sourceId) || [])
+                .filter(item => item.endTime > now);
             let nextTime = nextPlaybackTimes.get(sourceId) || 0;
-            if (nextTime < now) nextTime = now + 0.02;
+            if (nextTime - now > PLAYBACK_MAX_QUEUE_SECONDS) {
+                let currentAudioEnd = now;
+                scheduled.forEach(item => {
+                    if (item.startTime > now + 0.005) {
+                        try { item.source.stop(); } catch (error) {}
+                        item.cancelled = true;
+                    } else {
+                        currentAudioEnd = Math.max(currentAudioEnd, item.endTime);
+                    }
+                });
+                scheduled = scheduled.filter(item => !item.cancelled);
+                nextTime = Math.max(
+                    now + PLAYBACK_START_LEAD_SECONDS,
+                    currentAudioEnd
+                );
+            } else if (nextTime < now) {
+                nextTime = now + PLAYBACK_START_LEAD_SECONDS;
+            }
+            const scheduledItem = {
+                source,
+                startTime: nextTime,
+                endTime: nextTime + buffer.duration,
+                cancelled: false
+            };
+            scheduled.push(scheduledItem);
+            scheduledPlaybackSources.set(sourceId, scheduled);
+            source.onended = () => {
+                const remaining = (scheduledPlaybackSources.get(sourceId) || [])
+                    .filter(item => item.source !== source && item.endTime > ctx.currentTime);
+                if (remaining.length) scheduledPlaybackSources.set(sourceId, remaining);
+                else scheduledPlaybackSources.delete(sourceId);
+            };
             source.start(nextTime);
             nextPlaybackTimes.set(sourceId, nextTime + buffer.duration);
         }
@@ -1352,7 +1391,15 @@
                 speakerAuthenticated = false;
 
                 micStream = await navigator.mediaDevices.getUserMedia({
-                    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        channelCount: { ideal: 1 },
+                        sampleRate: { ideal: 24000 },
+                        sampleSize: { ideal: 16 },
+                        latency: { ideal: 0 }
+                    }
                 });
                 showActiveUI(true, room, password);
                 setStatus('offline', '실시간 통역 연결 중…');

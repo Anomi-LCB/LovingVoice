@@ -1,8 +1,13 @@
 import base64
+import json
 
 import pytest
 
-from app.services.realtime_translation import LANGUAGE_CODES, RealtimeTranslationHub
+from app.services.realtime_translation import (
+    LANGUAGE_CODES,
+    OpenAITranslationSession,
+    RealtimeTranslationHub,
+)
 
 
 @pytest.mark.asyncio
@@ -69,6 +74,12 @@ async def test_only_primary_language_publishes_source_transcript():
     event = {"type": "session.input_transcript.delta", "delta": "안녕"}
     await hub._route_event("room", "speaker-a", "ja-JP", event)
     await hub._route_event("room", "speaker-a", "en-US", event)
+    await hub._route_event(
+        "room",
+        "speaker-a",
+        "en-US",
+        {"type": "session.input_transcript.done", "transcript": "안녕"},
+    )
 
     assert room_events == [
         (
@@ -78,7 +89,15 @@ async def test_only_primary_language_publishes_source_transcript():
                 "text": "안녕",
                 "source_id": "speaker-a",
             },
-        )
+        ),
+        (
+            "room",
+            {
+                "type": "transcript_done",
+                "source_id": "speaker-a",
+                "text": "안녕",
+            },
+        ),
     ]
 
 
@@ -86,17 +105,21 @@ def test_supported_ui_languages_map_to_openai_language_codes():
     for language in (
         "ko-KR",
         "en-US",
-        "zh-TW",
         "zh-CN",
         "ja-JP",
+        "es-ES",
+        "pt-BR",
+        "fr-FR",
+        "de-DE",
+        "ru-RU",
+        "hi-IN",
+        "id-ID",
+        "it-IT",
         "vi-VN",
-        "ta-IN",
-        "ne-NP",
-        "mn-MN",
-        "my-MM",
-        "km-KH",
     ):
         assert language in LANGUAGE_CODES
+
+    assert len(set(LANGUAGE_CODES.values())) == 13
 
 
 @pytest.mark.asyncio
@@ -136,6 +159,87 @@ async def test_listener_count_never_multiplies_openai_routes(monkeypatch):
     assert hub.route_status("room") == [
         {"source_id": "source-channel", "language": "en-US"}
     ]
+
+
+@pytest.mark.asyncio
+async def test_new_audience_language_is_prepared_before_next_audio(monkeypatch):
+    created = []
+
+    class FakeSession:
+        def __init__(self, target_language, on_event, **kwargs):
+            self.target_language = target_language
+            created.append(self)
+
+        def start(self):
+            pass
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "app.services.realtime_translation.OpenAITranslationSession", FakeSession
+    )
+
+    async def ignore(*args):
+        pass
+
+    hub = RealtimeTranslationHub(ignore, ignore, api_key="test-key")
+    await hub.prepare("room", "speaker", ["ko-KR"])
+    await hub.prepare_language("room", "en-US")
+    await hub.prepare_language("room", "en-US")
+
+    assert [session.target_language for session in created] == ["ko", "en"]
+    assert hub.active_session_count == 2
+
+
+@pytest.mark.asyncio
+async def test_translation_session_uses_low_latency_input_configuration(monkeypatch):
+    connection_options = {}
+
+    class FakeSocket:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, message):
+            self.sent.append(json.loads(message))
+
+        def __aiter__(self):
+            async def events():
+                yield json.dumps({"type": "session.closed"})
+
+            return events()
+
+    socket = FakeSocket()
+
+    class FakeConnection:
+        async def __aenter__(self):
+            return socket
+
+        async def __aexit__(self, *args):
+            return False
+
+    def fake_connect(uri, **kwargs):
+        connection_options.update(kwargs)
+        return FakeConnection()
+
+    monkeypatch.setattr(
+        "app.services.realtime_translation.websockets.connect", fake_connect
+    )
+
+    async def ignore(event):
+        pass
+
+    session = OpenAITranslationSession(
+        "en", ignore, api_key="test-key", model="gpt-realtime-translate"
+    )
+    await session._run_connection()
+
+    update = socket.sent[0]
+    input_audio = update["session"]["audio"]["input"]
+    assert input_audio["transcription"]["model"] == "gpt-realtime-whisper"
+    assert input_audio["noise_reduction"]["type"] == "near_field"
+    assert update["session"]["audio"]["output"]["language"] == "en"
+    assert connection_options["compression"] is None
 
 
 @pytest.mark.asyncio

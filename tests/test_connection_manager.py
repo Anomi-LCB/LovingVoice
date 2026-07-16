@@ -23,6 +23,16 @@ class FakeAudience:
         self.messages.append(message)
 
 
+class SlowAudience(FakeAudience):
+    def __init__(self, gate):
+        super().__init__()
+        self.gate = gate
+
+    async def send_json(self, message):
+        await self.gate.wait()
+        self.messages.append(message)
+
+
 def test_default_subtitle_history_keeps_twenty_completed_captions(monkeypatch):
     monkeypatch.delenv("SUBTITLE_HISTORY_LIMIT", raising=False)
 
@@ -65,6 +75,36 @@ async def test_same_language_audiences_share_one_language_channel():
 
     assert all(audience.messages == [message] for audience in english_audience)
     assert all(audience.messages == [] for audience in japanese_audience)
+
+
+@pytest.mark.asyncio
+async def test_realtime_fanout_does_not_block_on_slow_audience():
+    import asyncio
+
+    manager = ConnectionManager()
+    gate = asyncio.Event()
+    audience = SlowAudience(gate)
+    await manager.add_audience("room", "en-US", audience)
+
+    first = {"type": "audio_delta", "audio": "one"}
+    second = {"type": "translation_delta", "text": "two"}
+    await asyncio.wait_for(
+        manager.queue_json_to_language("room", "en-US", first), timeout=0.1
+    )
+    await asyncio.sleep(0)
+    await asyncio.wait_for(
+        manager.queue_json_to_language("room", "en-US", second), timeout=0.1
+    )
+
+    assert audience.messages == []
+    gate.set()
+    for _ in range(20):
+        if len(audience.messages) == 2:
+            break
+        await asyncio.sleep(0.01)
+
+    assert audience.messages == [first, second]
+    await manager.close_realtime_fanout()
 
 
 @pytest.mark.asyncio

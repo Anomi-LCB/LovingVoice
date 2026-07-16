@@ -1,9 +1,12 @@
 import asyncio
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import WebSocket
+
+logger = logging.getLogger("LovingVoice.Connection")
 
 class ConnectionManager:
     def __init__(self):
@@ -27,6 +30,16 @@ class ConnectionManager:
         self.history_item_max_chars = max(
             200, int(os.getenv("SUBTITLE_HISTORY_ITEM_MAX_CHARS", "2000"))
         )
+        self.realtime_fanout_queue_size = max(
+            4, min(64, int(os.getenv("REALTIME_FANOUT_QUEUE_SIZE", "8")))
+        )
+        self.realtime_send_timeout = max(
+            0.1, min(2.0, float(os.getenv("REALTIME_SEND_TIMEOUT_SECONDS", "0.35")))
+        )
+        self._room_event_queues = {}
+        self._room_event_workers = {}
+        self._language_event_queues = {}
+        self._language_event_workers = {}
 
     async def add_speaker(self, room_id, websocket):
         """방에 강연자를 추가한다. Realtime 모드는 인원 제한을 두지 않는다."""
@@ -45,6 +58,8 @@ class ConnectionManager:
                 self.active_speakers[room_id].remove(websocket)
                 if not self.active_speakers[room_id]:
                     del self.active_speakers[room_id]
+                    if room_id not in self.active_connections:
+                        self._cancel_room_fanout(room_id)
             except ValueError:
                 pass
 
@@ -65,8 +80,11 @@ class ConnectionManager:
                 self.active_connections[room_id][lang].remove(websocket)
                 if not self.active_connections[room_id][lang]:
                     del self.active_connections[room_id][lang]
+                    self._cancel_language_fanout(room_id, lang)
                 if not self.active_connections[room_id]:
                     del self.active_connections[room_id]
+                    if room_id not in self.active_speakers:
+                        self._cancel_room_fanout(room_id)
         except ValueError:
             pass
 
@@ -129,11 +147,19 @@ class ConnectionManager:
         for websockets in room.values():
             for ws in websockets:
                 if ws.client_state.name == "CONNECTED" and id(ws) not in seen_websockets:
-                    send_tasks.append(ws.send_json(data))
+                    send_tasks.append(
+                        asyncio.wait_for(
+                            ws.send_json(data), timeout=self.realtime_send_timeout
+                        )
+                    )
                     seen_websockets.add(id(ws))
         for ws in self.active_speakers.get(room_id, []):
             if ws.client_state.name == "CONNECTED" and id(ws) not in seen_websockets:
-                send_tasks.append(ws.send_json(data))
+                send_tasks.append(
+                    asyncio.wait_for(
+                        ws.send_json(data), timeout=self.realtime_send_timeout
+                    )
+                )
                 seen_websockets.add(id(ws))
         
         if send_tasks:
@@ -145,12 +171,97 @@ class ConnectionManager:
         room = self.active_connections.get(room_id, {})
         websockets = room.get(lang, [])
         send_tasks = [
-            ws.send_json(data)
+            asyncio.wait_for(
+                ws.send_json(data), timeout=self.realtime_send_timeout
+            )
             for ws in websockets
             if ws.client_state.name == "CONNECTED"
         ]
         if send_tasks:
             await asyncio.gather(*send_tasks, return_exceptions=True)
+
+    @staticmethod
+    def _put_latest(queue, data):
+        if queue.full():
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+        queue.put_nowait(dict(data))
+
+    async def queue_json_to_room(self, room_id, data):
+        """Queue realtime room events so listener fan-out never blocks OpenAI."""
+        room_id = self.resolve_room_id(room_id)
+        queue = self._room_event_queues.get(room_id)
+        if queue is None:
+            queue = asyncio.Queue(maxsize=self.realtime_fanout_queue_size)
+            self._room_event_queues[room_id] = queue
+            self._room_event_workers[room_id] = asyncio.create_task(
+                self._room_fanout_worker(room_id, queue)
+            )
+        self._put_latest(queue, data)
+
+    async def queue_json_to_language(self, room_id, lang, data):
+        """Queue one shared realtime stream per room/language route."""
+        room_id = self.resolve_room_id(room_id)
+        key = (room_id, lang)
+        queue = self._language_event_queues.get(key)
+        if queue is None:
+            queue = asyncio.Queue(maxsize=self.realtime_fanout_queue_size)
+            self._language_event_queues[key] = queue
+            self._language_event_workers[key] = asyncio.create_task(
+                self._language_fanout_worker(room_id, lang, queue)
+            )
+        self._put_latest(queue, data)
+
+    async def _room_fanout_worker(self, room_id, queue):
+        try:
+            while True:
+                await self.broadcast_json_to_room(room_id, await queue.get())
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Realtime room fan-out failed for %s", room_id)
+
+    async def _language_fanout_worker(self, room_id, lang, queue):
+        try:
+            while True:
+                await self.broadcast_json_to_language(
+                    room_id, lang, await queue.get()
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Realtime language fan-out failed for %s/%s", room_id, lang
+            )
+
+    def _cancel_room_fanout(self, room_id):
+        worker = self._room_event_workers.pop(room_id, None)
+        self._room_event_queues.pop(room_id, None)
+        if worker:
+            worker.cancel()
+
+    def _cancel_language_fanout(self, room_id, lang):
+        key = (room_id, lang)
+        worker = self._language_event_workers.pop(key, None)
+        self._language_event_queues.pop(key, None)
+        if worker:
+            worker.cancel()
+
+    async def close_realtime_fanout(self):
+        workers = [
+            *self._room_event_workers.values(),
+            *self._language_event_workers.values(),
+        ]
+        self._room_event_workers.clear()
+        self._language_event_workers.clear()
+        self._room_event_queues.clear()
+        self._language_event_queues.clear()
+        for worker in workers:
+            worker.cancel()
+        if workers:
+            await asyncio.gather(*workers, return_exceptions=True)
 
     async def record_subtitle(self, room_id, lang, source_id, text):
         """Store a completed translation and return its public event payload."""
