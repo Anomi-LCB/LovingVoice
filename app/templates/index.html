@@ -73,94 +73,289 @@
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
         }
         html[data-theme="dark"] .theme-toggle:hover { background: #334155; }
+        .app-shell { width: min(100%, 1120px); margin: 0 auto; padding: 88px 20px 40px; }
+        .screen { width: 100%; }
+        .role-screen { min-height: calc(100vh - 128px); display: grid; place-items: center; }
+        .role-screen.hidden, .screen.hidden { display: none; }
+        .role-wrap { width: min(100%, 900px); }
+        .brand-block { text-align: center; margin-bottom: 40px; }
+        .brand-name { margin: 0; color: #2563eb; font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 800; letter-spacing: -0.04em; }
+        .brand-copy { max-width: 620px; margin: 14px auto 0; color: #475569; font-size: clamp(1rem, 2vw, 1.18rem); line-height: 1.65; }
+        .role-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+        .role-card { min-height: 250px; padding: 30px; border-radius: 24px; border: 1px solid #dbe3ef; background: rgba(255,255,255,.9); color: #172033; text-align: left; box-shadow: 0 18px 50px rgba(15,23,42,.08); transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
+        .role-card:hover { transform: translateY(-3px); border-color: #93b4f8; box-shadow: 0 24px 60px rgba(37,99,235,.13); }
+        .role-card:focus-visible { outline: 3px solid rgba(59,130,246,.35); outline-offset: 3px; }
+        .role-index { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; background: #eaf2ff; color: #1d4ed8; font-size: .82rem; font-weight: 800; }
+        .role-title { display: block; margin-top: 30px; font-size: 1.55rem; font-weight: 800; letter-spacing: -.025em; }
+        .role-description { display: block; min-height: 54px; margin-top: 10px; color: #64748b; line-height: 1.6; }
+        .role-action { display: flex; align-items: center; justify-content: space-between; margin-top: 26px; color: #2563eb; font-weight: 800; }
+        .role-action::after { content: '→'; font-size: 1.2rem; }
+        .setup-screen { max-width: 980px; margin: 0 auto; }
+        .screen-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+        .back-button { border: 0; background: transparent; color: #475569; font-weight: 750; padding: 8px 0; }
+        .back-button:hover { color: #2563eb; }
+        .step-label { color: #64748b; font-size: .85rem; font-weight: 700; }
+        .setup-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 22px; align-items: start; }
+        .form-card, .support-card { padding: 32px; border-radius: 24px; }
+        .form-title { margin: 0; font-size: clamp(1.65rem, 4vw, 2.15rem); font-weight: 850; letter-spacing: -.035em; }
+        .form-copy { margin: 10px 0 28px; color: #64748b; line-height: 1.6; }
+        .field-group { margin-top: 20px; }
+        .field-label { display: block; margin-bottom: 8px; font-size: .92rem; font-weight: 750; }
+        .field-help { margin: 8px 0 0; color: #64748b; font-size: .78rem; line-height: 1.5; }
+        .form-control { width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #172033; outline: none; transition: border-color 160ms ease, box-shadow 160ms ease; }
+        .form-control:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.16); }
+        .form-control[readonly] { background: #f1f5f9; color: #475569; }
+        .password-field { position: relative; }
+        .password-field .form-control { padding-right: 64px; }
+        .password-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 7px 9px; border: 0; border-radius: 8px; background: transparent; color: #64748b; font-size: .78rem; font-weight: 750; }
+        .password-toggle:hover { background: #f1f5f9; color: #2563eb; }
+        .form-error { min-height: 22px; margin: 14px 0 0; color: #dc2626; font-size: .86rem; font-weight: 650; line-height: 1.5; }
+        .button-row { display: flex; gap: 12px; margin-top: 24px; }
+        .primary-button, .secondary-button { min-height: 50px; padding: 0 20px; border-radius: 13px; font-weight: 800; transition: transform 150ms ease, background-color 150ms ease, opacity 150ms ease; }
+        .primary-button { flex: 1; background: #2563eb; color: #fff; box-shadow: 0 10px 24px rgba(37,99,235,.2); }
+        .primary-button:hover { background: #1d4ed8; transform: translateY(-1px); }
+        .secondary-button { background: #eaf0f7; color: #243047; }
+        .secondary-button:hover { background: #dde7f2; }
+        .primary-button:disabled, .secondary-button:disabled { cursor: wait; opacity: .58; transform: none; }
+        .support-card h3 { margin: 0; font-size: 1.05rem; }
+        .support-copy { margin: 8px 0 20px; color: #64748b; font-size: .88rem; line-height: 1.55; }
+        .mic-status { display: flex; align-items: center; gap: 10px; font-weight: 750; }
+        .mic-indicator { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; }
+        .mic-indicator.ready { background: #22c55e; }
+        .mic-meter { height: 8px; margin: 16px 0 20px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+        .mic-meter-fill { width: 0; height: 100%; border-radius: inherit; background: #2563eb; transition: width 100ms linear; }
+        .support-list { display: grid; gap: 12px; margin-top: 24px; padding-top: 22px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: .84rem; }
+        .support-list span::before { content: '✓'; margin-right: 9px; color: #2563eb; font-weight: 900; }
+        .audience-card { max-width: 560px; margin: 0 auto; }
+        .session-shell { max-width: 1040px; margin: 0 auto; }
+        .session-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 18px; border-radius: 18px; }
+        .session-status { display: flex; min-width: 0; align-items: center; gap: 11px; }
+        .session-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+        .session-chip { padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; color: #334155; font-size: .8rem; font-weight: 700; }
+        .session-action { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #334155; font-size: .82rem; font-weight: 750; }
+        .session-action.primary { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+        .session-action:hover { border-color: #93c5fd; }
+        .caption-stage { height: min(62vh, 580px); min-height: 420px; margin-top: 18px; padding: 18px; border-radius: 24px; }
+        .caption-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px 14px; color: #64748b; font-size: .78rem; }
+        .host-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; padding: 16px; border-radius: 18px; }
+        .control-button { min-height: 44px; padding: 0 16px; border-radius: 11px; background: #e2e8f0; color: #243047; font-weight: 780; }
+        .control-button.primary { background: #1d4ed8; color: #fff; }
+        .control-button.danger { background: #dc2626; color: #fff; }
+        .recording-note { width: 100%; margin: 2px 0 0; text-align: center; color: #64748b; font-size: .78rem; }
+        .modal-layer { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; }
+        .modal-layer.hidden { display: none; }
+        .modal-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,.5); backdrop-filter: blur(3px); }
+        .modal-card { position: relative; width: min(100%, 540px); padding: 28px; border-radius: 24px; background: #fff; color: #172033; box-shadow: 0 30px 90px rgba(15,23,42,.28); }
+        .modal-close { position: absolute; top: 16px; right: 16px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: #f1f5f9; color: #475569; font-size: 1.2rem; }
+        .invite-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0; }
+        .invite-item { padding: 13px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+        .invite-item label { display: block; margin-bottom: 4px; color: #64748b; font-size: .72rem; font-weight: 700; }
+        .invite-item strong { overflow-wrap: anywhere; }
+        .invite-text { width: 100%; min-height: 112px; resize: none; padding: 12px; border: 1px solid #cbd5e1; border-radius: 12px; background: #f8fafc; color: #334155; font-size: .82rem; line-height: 1.55; }
+        .copy-status { min-height: 20px; margin: 10px 0 0; color: #16a34a; font-size: .82rem; }
+        html[data-theme="dark"] .brand-copy, html[data-theme="dark"] .role-description, html[data-theme="dark"] .form-copy, html[data-theme="dark"] .field-help, html[data-theme="dark"] .support-copy, html[data-theme="dark"] .support-list, html[data-theme="dark"] .recording-note, html[data-theme="dark"] .caption-meta, html[data-theme="dark"] .step-label { color: #94a3b8; }
+        html[data-theme="dark"] .role-card, html[data-theme="dark"] .form-control, html[data-theme="dark"] .session-chip, html[data-theme="dark"] .session-action { border-color: #475569; background: #1e293b; color: #f8fafc; }
+        html[data-theme="dark"] .role-card:hover { border-color: #60a5fa; box-shadow: 0 24px 60px rgba(0,0,0,.25); }
+        html[data-theme="dark"] .role-index { background: #1e3a8a; color: #bfdbfe; }
+        html[data-theme="dark"] .form-control[readonly], html[data-theme="dark"] .invite-item, html[data-theme="dark"] .invite-text { background: #0f172a; color: #cbd5e1; }
+        html[data-theme="dark"] .password-toggle:hover, html[data-theme="dark"] .modal-close { background: #334155; color: #f8fafc; }
+        html[data-theme="dark"] .secondary-button, html[data-theme="dark"] .control-button { background: #334155; color: #f8fafc; }
+        html[data-theme="dark"] .mic-meter { background: #334155; }
+        html[data-theme="dark"] .support-list, html[data-theme="dark"] .invite-item { border-color: #334155; }
+        html[data-theme="dark"] .modal-card { background: #1e293b; color: #f8fafc; }
+        html[data-theme="dark"] .invite-text { border-color: #475569; }
+        @media (max-width: 760px) {
+            .app-shell { padding: 76px 16px 24px; }
+            .role-screen { min-height: calc(100vh - 100px); align-items: start; padding-top: 38px; }
+            .brand-block { margin-bottom: 28px; }
+            .role-grid, .setup-layout { grid-template-columns: 1fr; }
+            .role-card { min-height: 190px; padding: 24px; }
+            .role-title { margin-top: 20px; }
+            .role-description { min-height: 0; }
+            .form-card, .support-card { padding: 24px 20px; }
+            .setup-layout .support-card { order: 2; }
+            .session-header { align-items: flex-start; flex-direction: column; }
+            .session-actions { width: 100%; justify-content: flex-start; }
+            .caption-stage { height: calc(100vh - 230px); min-height: 450px; padding: 14px 10px; }
+            .host-controls { justify-content: stretch; }
+            .control-button { flex: 1 1 calc(50% - 8px); }
+            .invite-grid { grid-template-columns: 1fr; }
+        }
         .pulse-red { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center justify-center p-4">
+<body class="min-h-screen">
     <button id="theme_toggle" type="button" class="theme-toggle" onclick="toggleTheme()" aria-pressed="false">다크 모드</button>
-    <div id="setup_box" class="glass p-8 rounded-2xl shadow-2xl w-full max-w-md">
-        <h1 class="text-3xl font-bold mb-6 text-center text-blue-400">LovingVoice</h1>
-        <div class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium mb-1">방 이름</label>
-                <input type="text" id="room_id" maxlength="40" autocomplete="off" spellcheck="false" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="예: 주일예배">
-                <p id="room_hint" class="mt-2 text-xs text-slate-400">강연자가 사용할 방 이름을 직접 입력하세요.</p>
+    <main class="app-shell">
+        <section id="role_screen" class="screen role-screen">
+            <div class="role-wrap">
+                <div class="brand-block">
+                    <h1 class="brand-name">LovingVoice</h1>
+                    <p class="brand-copy">한 사람이 말하면, 각 청중이 선택한 언어로 실시간 음성과 자막을 받습니다.</p>
+                </div>
+                <div class="role-grid" aria-label="사용할 역할 선택">
+                    <button type="button" class="role-card" onclick="openRoleScreen('host')">
+                        <span class="role-index">01</span>
+                        <span class="role-title">강연 시작</span>
+                        <span class="role-description">방 이름과 비밀번호를 정하고 마이크를 준비한 뒤 방송을 시작합니다.</span>
+                        <span class="role-action">강연 준비하기</span>
+                    </button>
+                    <button type="button" class="role-card" onclick="openRoleScreen('audience')">
+                        <span class="role-index">02</span>
+                        <span class="role-title">청중 입장</span>
+                        <span class="role-description">초대받은 방에 입장해 원하는 언어로 실시간 통역을 듣습니다.</span>
+                        <span class="role-action">방에 입장하기</span>
+                    </button>
+                </div>
             </div>
-            <div>
-                <label class="block text-sm font-medium mb-1">방 비밀번호</label>
-                <input type="text" id="room_password" minlength="4" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="직접 입력 (4자 이상)">
-                <p class="mt-2 text-xs text-slate-400">청중은 방 이름과 이 비밀번호로 입장합니다.</p>
-            </div>
-            <div>
-                <label class="block text-sm font-medium mb-1">내 언어 (수신용)</label>
-                <select id="lang_select" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 outline-none">
-                    <option value="ko-KR">한국어</option>
-                    <option value="en-US">English</option>
-                    <option value="zh-TW">繁體中文</option>
-                    <option value="zh-CN">简体中文</option>
-                    <option value="ja-JP">日本語</option>
-                    <option value="vi-VN">Tiếng Việt (베트남어)</option>
-                    <option value="ta-IN">தமிழ் (타밀어)</option>
-                    <option value="ne-NP">नेपाली (네팔어)</option>
-                    <option value="mn-MN">Монгол (몽골어)</option>
-                    <option value="my-MM">မြန်မာ (버마어)</option>
-                    <option value="km-KH">ខ្មែរ (크메르어)</option>
-                </select>
-            </div>
-            <div class="flex gap-3 pt-2">
-                <button id="speaker_start_button" onclick="startSpeaker()" class="flex-1 bg-blue-600 hover:bg-blue-500 transition-colors font-bold py-3 rounded-xl shadow-lg">강연 시작</button>
-                <button onclick="startAudience()" class="flex-1 bg-slate-700 hover:bg-slate-600 transition-colors font-bold py-3 rounded-xl shadow-lg">청중 입장</button>
-            </div>
-            <input type="hidden" id="voice_mode" value="openai">
-        </div>
-    </div>
+        </section>
 
-    <div id="active_ui" class="hidden w-full max-w-4xl space-y-6">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 glass p-4 rounded-xl">
-            <div class="flex min-w-0 items-center gap-3">
-                <div id="status_dot" class="w-3 h-3 rounded-full bg-gray-500"></div>
-                <span id="status_text" class="text-sm font-medium">연결 준비 중...</span>
+        <section id="host_setup_screen" class="screen setup-screen hidden">
+            <header class="screen-header">
+                <button type="button" class="back-button" onclick="showScreen('role_screen')">← 처음으로</button>
+                <span class="step-label">강연자 · 방송 준비</span>
+            </header>
+            <div class="setup-layout">
+                <form class="glass form-card" onsubmit="event.preventDefault(); startSpeaker();">
+                    <h2 class="form-title">강연 준비</h2>
+                    <p class="form-copy">청중에게 공유할 방 정보만 정하면 바로 시작할 수 있습니다.</p>
+                    <div class="field-group">
+                        <label class="field-label" for="host_room_id">방 이름</label>
+                        <input id="host_room_id" class="form-control" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="예: 주일예배">
+                        <p class="field-help">문자·숫자·하이픈을 사용할 수 있으며 공백은 하이픈으로 바뀝니다.</p>
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label" for="host_room_password">청중 입장 비밀번호</label>
+                        <div class="password-field">
+                            <input id="host_room_password" class="form-control" type="password" minlength="4" maxlength="32" autocomplete="new-password" autocapitalize="none" spellcheck="false" placeholder="4~32자로 직접 입력">
+                            <button type="button" class="password-toggle" onclick="togglePassword('host_room_password', this)">보기</button>
+                        </div>
+                        <p class="field-help">강연자용 별도 비밀번호는 없습니다. 이 비밀번호는 청중 입장에만 사용됩니다.</p>
+                    </div>
+                    <p id="host_form_error" class="form-error" role="alert"></p>
+                    <div class="button-row">
+                        <button id="host_start_button" class="primary-button" type="submit">강연 시작</button>
+                    </div>
+                    <input type="hidden" id="voice_mode" value="openai">
+                </form>
+                <aside class="glass support-card">
+                    <h3>마이크 준비</h3>
+                    <p class="support-copy">방송 전에 마이크 권한과 입력 상태를 확인할 수 있습니다.</p>
+                    <div class="mic-status">
+                        <span id="mic_indicator" class="mic-indicator"></span>
+                        <span id="mic_status_text">확인하지 않음</span>
+                    </div>
+                    <div class="mic-meter" aria-hidden="true"><div id="mic_meter_fill" class="mic-meter-fill"></div></div>
+                    <button id="mic_test_button" type="button" class="secondary-button w-full" onclick="testMicrophone()">마이크 확인</button>
+                    <div class="support-list">
+                        <span>음성은 한 번만 번역 채널로 전송됩니다</span>
+                        <span>같은 언어의 청중은 하나의 번역을 공유합니다</span>
+                        <span>원본 녹음은 강연자 기기에만 저장됩니다</span>
+                    </div>
+                </aside>
             </div>
-            <div class="flex flex-wrap items-center justify-end gap-2">
-                <button onclick="copyAudienceLink()" class="text-sm bg-blue-950 hover:bg-blue-900 px-3 py-1.5 rounded-full border border-blue-800">초대 정보 복사</button>
-                <div id="room_display" class="text-sm bg-slate-800 px-3 py-1 rounded-full border border-slate-700">방: -</div>
-                <button onclick="leaveSession()" class="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-full border border-slate-700">나가기</button>
-            </div>
-        </div>
+        </section>
 
-        <div class="glass p-4 rounded-2xl h-[400px] md:h-[500px] flex flex-col w-full text-left overflow-hidden">
-            <div class="flex items-center justify-between px-4 pb-3 text-xs text-slate-400">
-                <span id="recent_history_label">최근 5분 자막</span>
-                <span id="route_badge" class="rounded-full bg-slate-800 px-3 py-1">공유 언어 채널</span>
-            </div>
-            <!-- 히스토리 영역 (채팅처럼 이전 대화 기록) -->
-            <div id="history_area" aria-live="polite" class="flex-1 overflow-y-auto space-y-3 pb-4 opacity-70 text-xl md:text-2xl font-medium px-4 scroll-smooth">
-            </div>
-            <!-- 활성 문장 (현재 대화 중인 가장 크고 밝은 텍스트) -->
-            <div id="subtitle_area" aria-live="assertive" class="text-2xl md:text-4xl font-bold leading-tight break-keep pt-4 border-t border-slate-700 px-4 min-h-[80px] text-blue-100">
-                강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.
-            </div>
-        </div>
+        <section id="audience_setup_screen" class="screen setup-screen hidden">
+            <header class="screen-header audience-card">
+                <button type="button" class="back-button" onclick="returnFromAudienceSetup()">← 처음으로</button>
+                <span class="step-label">청중 · 통역 입장</span>
+            </header>
+            <form class="glass form-card audience-card" onsubmit="event.preventDefault(); startAudience();">
+                <h2 class="form-title">청중 입장</h2>
+                <p id="audience_intro" class="form-copy">강연자에게 받은 방 이름과 비밀번호를 입력하세요.</p>
+                <div class="field-group">
+                    <label class="field-label" for="audience_room_id">방 이름</label>
+                    <input id="audience_room_id" class="form-control" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="초대받은 방 이름">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="audience_room_password">방 비밀번호</label>
+                    <div class="password-field">
+                        <input id="audience_room_password" class="form-control" type="password" maxlength="32" autocomplete="current-password" autocapitalize="none" spellcheck="false" placeholder="강연자에게 받은 비밀번호">
+                        <button type="button" class="password-toggle" onclick="togglePassword('audience_room_password', this)">보기</button>
+                    </div>
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="audience_lang_select">내가 들을 언어</label>
+                    <select id="audience_lang_select" class="form-control">
+                        <option value="ko-KR">한국어</option>
+                        <option value="en-US">English</option>
+                        <option value="zh-TW">繁體中文</option>
+                        <option value="zh-CN">简体中文</option>
+                        <option value="ja-JP">日本語</option>
+                        <option value="vi-VN">Tiếng Việt (베트남어)</option>
+                        <option value="ta-IN">தமிழ் (타밀어)</option>
+                        <option value="ne-NP">नेपाली (네팔어)</option>
+                        <option value="mn-MN">Монгол (몽골어)</option>
+                        <option value="my-MM">မြန်မာ (버마어)</option>
+                        <option value="km-KH">ខ្មែរ (크메르어)</option>
+                    </select>
+                    <p class="field-help">같은 언어를 선택한 청중은 하나의 번역 채널을 공유합니다.</p>
+                </div>
+                <p id="audience_form_error" class="form-error" role="alert"></p>
+                <div class="button-row">
+                    <button id="audience_join_button" class="primary-button" type="submit">통역방 입장</button>
+                </div>
+            </form>
+        </section>
 
-        <div id="speaker_controls" class="hidden glass p-4 rounded-xl flex flex-wrap justify-center gap-3">
-            <button id="mute_button" onclick="toggleMute()" class="bg-slate-700 hover:bg-slate-600 px-6 py-2 rounded-lg font-bold transition-all">
-                마이크 음소거
-            </button>
-            <button id="record_button" onclick="toggleRecording()" class="bg-blue-700 hover:bg-blue-600 px-6 py-2 rounded-lg font-bold transition-all">
-                녹음 시작
-            </button>
-            <a id="recording_download" onclick="markRecordingSaved()" class="hidden bg-blue-950 hover:bg-blue-900 px-6 py-2 rounded-lg font-bold transition-all" href="#">
-                녹음 파일 저장
-            </a>
-            <button onclick="sendTestAudio()" class="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-lg font-bold transition-all flex items-center gap-2">
-                테스트 알림 발송
-            </button>
-            <button onclick="leaveSession()" class="bg-slate-800 hover:bg-slate-700 px-6 py-2 rounded-lg font-bold transition-all">
-                방송 종료
-            </button>
-            <p id="recording_status" class="w-full text-center text-xs text-slate-400">원본 음성은 이 기기에서만 녹음됩니다.</p>
-        </div>
+        <section id="active_ui" class="screen session-shell hidden" data-role="">
+            <header class="glass session-header">
+                <div class="session-status">
+                    <div id="status_dot" class="w-3 h-3 rounded-full bg-gray-500"></div>
+                    <div>
+                        <div id="session_role_label" class="step-label">연결 준비</div>
+                        <div id="status_text" class="text-sm font-medium">연결 준비 중...</div>
+                    </div>
+                </div>
+                <div class="session-actions">
+                    <button id="invite_button" type="button" onclick="openInviteModal()" class="session-action primary">청중 초대</button>
+                    <div id="room_display" class="session-chip">방: -</div>
+                    <button type="button" onclick="exitSession()" class="session-action">나가기</button>
+                </div>
+            </header>
+
+            <div class="glass caption-stage flex flex-col w-full text-left overflow-hidden">
+                <div class="caption-meta">
+                    <span id="recent_history_label">최근 5분 자막</span>
+                    <span id="route_badge" class="session-chip">공유 언어 채널</span>
+                </div>
+                <div id="history_area" aria-live="polite" class="flex-1 overflow-y-auto space-y-3 pb-4 opacity-70 text-xl md:text-2xl font-medium px-4 scroll-smooth"></div>
+                <div id="subtitle_area" aria-live="assertive" class="text-2xl md:text-4xl font-bold leading-tight break-keep pt-4 border-t border-slate-700 px-4 min-h-[80px] text-blue-100">
+                    강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.
+                </div>
+            </div>
+
+            <div id="speaker_controls" class="host-controls glass hidden">
+                <button id="mute_button" type="button" onclick="toggleMute()" class="control-button">마이크 음소거</button>
+                <button id="record_button" type="button" onclick="toggleRecording()" class="control-button primary">녹음 시작</button>
+                <a id="recording_download" onclick="markRecordingSaved()" class="control-button hidden" href="#">녹음 파일 저장</a>
+                <button type="button" onclick="sendTestAudio()" class="control-button">연결 테스트</button>
+                <button type="button" onclick="leaveSession('home')" class="control-button danger">방송 종료</button>
+                <p id="recording_status" class="recording-note">원본 음성은 이 기기에서만 녹음됩니다.</p>
+            </div>
+        </section>
+    </main>
+
+    <div id="invite_modal" class="modal-layer hidden" role="dialog" aria-modal="true" aria-labelledby="invite_modal_title">
+        <div class="modal-backdrop" onclick="closeInviteModal()"></div>
+        <section class="modal-card">
+            <button type="button" class="modal-close" onclick="closeInviteModal()" aria-label="초대 정보 닫기">×</button>
+            <span class="step-label">청중에게 전달할 정보</span>
+            <h2 id="invite_modal_title" class="form-title mt-2">청중 초대</h2>
+            <p class="form-copy">아래 내용을 그대로 전달하면 링크가 청중 입장 화면으로 열립니다.</p>
+            <div class="invite-grid">
+                <div class="invite-item"><label>방 이름</label><strong id="invite_room_name">-</strong></div>
+                <div class="invite-item"><label>방 비밀번호</label><strong id="invite_room_password">-</strong></div>
+            </div>
+            <textarea id="invite_text" class="invite-text" readonly aria-label="복사할 청중 초대 정보"></textarea>
+            <p id="invite_copy_status" class="copy-status" role="status"></p>
+            <div class="button-row">
+                <button type="button" class="primary-button" onclick="copyAudienceLink()">초대 정보 복사</button>
+                <button type="button" class="secondary-button" onclick="closeInviteModal()">닫기</button>
+            </div>
+        </section>
     </div>
 
     <script>
@@ -174,6 +369,8 @@
         let heartbeatTimer;
         let audienceConfig;
         let currentRoom = '';
+        let currentRoomPassword = '';
+        let currentRole = '';
         let isLeaving = false;
         let speakerAuthenticated = false;
         let isMuted = false;
@@ -210,6 +407,89 @@
             applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
         }
 
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(screen => screen.classList.add('hidden'));
+            document.getElementById(screenId)?.classList.remove('hidden');
+            document.body.classList.toggle('session-active', screenId === 'active_ui');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function openRoleScreen(role) {
+            currentRole = role;
+            clearFormError(role);
+            showScreen(role === 'host' ? 'host_setup_screen' : 'audience_setup_screen');
+            setTimeout(() => {
+                document.getElementById(role === 'host' ? 'host_room_id' : 'audience_room_id')?.focus();
+            }, 0);
+        }
+
+        function returnFromAudienceSetup() {
+            const input = document.getElementById('audience_room_id');
+            input.readOnly = false;
+            document.getElementById('audience_intro').innerText = '강연자에게 받은 방 이름과 비밀번호를 입력하세요.';
+            history.replaceState({}, '', '/');
+            showScreen('role_screen');
+        }
+
+        function setFormError(role, message) {
+            const error = document.getElementById(`${role}_form_error`);
+            if (error) error.innerText = message || '';
+        }
+
+        function clearFormError(role) {
+            setFormError(role, '');
+        }
+
+        function togglePassword(inputId, button) {
+            const input = document.getElementById(inputId);
+            const shouldShow = input.type === 'password';
+            input.type = shouldShow ? 'text' : 'password';
+            button.innerText = shouldShow ? '숨기기' : '보기';
+            input.focus();
+        }
+
+        async function testMicrophone() {
+            const button = document.getElementById('mic_test_button');
+            const indicator = document.getElementById('mic_indicator');
+            const status = document.getElementById('mic_status_text');
+            const meter = document.getElementById('mic_meter_fill');
+            button.disabled = true;
+            status.innerText = '마이크 확인 중…';
+            meter.style.width = '0%';
+            clearFormError('host');
+            let testStream;
+            let testContext;
+            try {
+                testStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+                });
+                testContext = new (window.AudioContext || window.webkitAudioContext)();
+                const analyser = testContext.createAnalyser();
+                analyser.fftSize = 256;
+                testContext.createMediaStreamSource(testStream).connect(analyser);
+                const values = new Uint8Array(analyser.frequencyBinCount);
+                const startedAt = Date.now();
+                while (Date.now() - startedAt < 1100) {
+                    analyser.getByteFrequencyData(values);
+                    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+                    meter.style.width = `${Math.min(100, Math.max(8, average * 2.6))}%`;
+                    await new Promise(resolve => setTimeout(resolve, 80));
+                }
+                indicator.classList.add('ready');
+                status.innerText = '마이크 사용 가능';
+                meter.style.width = '100%';
+            } catch (error) {
+                indicator.classList.remove('ready');
+                status.innerText = '마이크 확인 실패';
+                meter.style.width = '0%';
+                setFormError('host', '마이크 권한을 허용한 뒤 다시 확인해주세요.');
+            } finally {
+                testStream?.getTracks().forEach(track => track.stop());
+                await testContext?.close().catch(() => {});
+                button.disabled = false;
+            }
+        }
+
         function setStatus(state, text) {
             const dot = document.getElementById('status_dot');
             const lbl = document.getElementById('status_text');
@@ -217,12 +497,21 @@
             dot.className = 'w-3 h-3 rounded-full ' + (state === 'online' ? 'bg-green-500' : (state === 'error' ? 'bg-red-500 pulse-red' : 'bg-gray-500'));
         }
 
-        function showActiveUI(isSpeaker) {
-            document.getElementById('setup_box').classList.add('hidden');
-            document.getElementById('active_ui').classList.remove('hidden');
-            if (isSpeaker) document.getElementById('speaker_controls').classList.remove('hidden');
-            currentRoom = cleanRoomId(document.getElementById('room_id').value);
+        function showActiveUI(isSpeaker, room, password = '') {
+            currentRole = isSpeaker ? 'host' : 'audience';
+            currentRoom = room;
+            currentRoomPassword = password;
+            const activeUI = document.getElementById('active_ui');
+            activeUI.dataset.role = currentRole;
+            showScreen('active_ui');
+            document.getElementById('speaker_controls').classList.toggle('hidden', !isSpeaker);
+            document.getElementById('invite_button').classList.toggle('hidden', !isSpeaker);
+            document.getElementById('session_role_label').innerText = isSpeaker ? '강연자 방송' : '청중 통역';
             document.getElementById('room_display').innerText = '방: ' + currentRoom;
+            document.getElementById('subtitle_area').innerText = isSpeaker
+                ? '강연을 시작하면 청중에게 실시간 통역이 전송됩니다.'
+                : '강연자의 다음 실시간 통역을 기다리는 중…';
+            document.getElementById('route_badge').innerText = isSpeaker ? '언어별 공유 전송' : '공유 언어 채널';
         }
 
         function cleanRoomId(value) {
@@ -234,22 +523,45 @@
         }
 
         async function copyAudienceLink() {
-            const room = currentRoom || cleanRoomId(document.getElementById('room_id').value);
-            if (!room) return alert('방 이름이 없습니다.');
+            const room = currentRoom;
+            if (!room) return;
             const url = new URL(window.location.href);
             url.search = '';
             url.searchParams.set('room', room);
             url.searchParams.set('mode', 'audience');
-            const roomPassword = document.getElementById('room_password').value.trim();
+            const roomPassword = currentRoomPassword;
             const invitation = roomPassword
                 ? `LovingVoice 청중 초대\n방 이름: ${room}\n방 비밀번호: ${roomPassword}\n입장 링크: ${url}`
                 : url.toString();
+            document.getElementById('invite_text').value = invitation;
             try {
                 await navigator.clipboard.writeText(invitation);
-                setStatus('online', '방 이름과 비밀번호를 포함한 청중 초대 정보를 복사했습니다.');
+                document.getElementById('invite_copy_status').innerText = '초대 정보를 복사했습니다.';
             } catch (error) {
-                prompt('아래 초대 정보를 복사하세요.', invitation);
+                const inviteText = document.getElementById('invite_text');
+                inviteText.focus();
+                inviteText.select();
+                document.getElementById('invite_copy_status').innerText = '선택된 내용을 직접 복사해주세요.';
             }
+        }
+
+        function openInviteModal() {
+            if (!currentRoom || currentRole !== 'host') return;
+            const url = new URL(window.location.href);
+            url.search = '';
+            url.searchParams.set('room', currentRoom);
+            url.searchParams.set('mode', 'audience');
+            const invitation = `LovingVoice 청중 초대\n방 이름: ${currentRoom}\n방 비밀번호: ${currentRoomPassword}\n입장 링크: ${url}`;
+            document.getElementById('invite_room_name').innerText = currentRoom;
+            document.getElementById('invite_room_password').innerText = currentRoomPassword;
+            document.getElementById('invite_text').value = invitation;
+            document.getElementById('invite_copy_status').innerText = '';
+            document.getElementById('invite_modal').classList.remove('hidden');
+            document.querySelector('#invite_modal .modal-close')?.focus();
+        }
+
+        function closeInviteModal() {
+            document.getElementById('invite_modal').classList.add('hidden');
         }
 
         function toggleMute() {
@@ -297,11 +609,11 @@
 
         function startRecording() {
             if (!window.MediaRecorder) {
-                alert('이 브라우저는 녹음 기능을 지원하지 않습니다. 최신 Chrome, Edge 또는 Safari를 사용해주세요.');
+                document.getElementById('recording_status').innerText = '이 브라우저는 녹음을 지원하지 않습니다. 최신 브라우저를 사용해주세요.';
                 return;
             }
             if (!micStream?.active) {
-                alert('마이크 연결이 완료된 후 녹음을 시작해주세요.');
+                document.getElementById('recording_status').innerText = '마이크 연결이 완료된 후 녹음을 시작해주세요.';
                 return;
             }
             if (mediaRecorder?.state === 'recording') return;
@@ -321,7 +633,7 @@
             try {
                 mediaRecorder = new MediaRecorder(micStream, options);
             } catch (error) {
-                alert('녹음을 시작할 수 없습니다: ' + error.message);
+                document.getElementById('recording_status').innerText = '녹음을 시작할 수 없습니다: ' + error.message;
                 return;
             }
 
@@ -380,9 +692,10 @@
             }
         }
 
-        async function leaveSession() {
+        async function leaveSession(returnScreen = 'home') {
             isLeaving = true;
             speakerAuthenticated = false;
+            closeInviteModal();
             clearTimeout(reconnectTimer);
             clearInterval(heartbeatTimer);
             if (mediaRecorder?.state === 'recording') {
@@ -433,11 +746,25 @@
             document.getElementById('mute_button').innerText = '마이크 음소거';
             document.getElementById('active_ui').classList.add('hidden');
             document.getElementById('speaker_controls').classList.add('hidden');
-            document.getElementById('setup_box').classList.remove('hidden');
             document.getElementById('history_area').replaceChildren();
             document.getElementById('subtitle_area').innerText = '강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.';
             audienceConfig = null;
+            currentRoomPassword = '';
             isLeaving = false;
+            if (returnScreen === 'host') {
+                currentRole = 'host';
+                showScreen('host_setup_screen');
+            } else if (returnScreen === 'audience') {
+                currentRole = 'audience';
+                showScreen('audience_setup_screen');
+            } else {
+                currentRole = '';
+                showScreen('role_screen');
+            }
+        }
+
+        function exitSession() {
+            return leaveSession(currentRole === 'audience' ? 'audience' : 'home');
         }
 
         function ensurePlaybackContext() {
@@ -467,16 +794,28 @@
         }
 
         async function startSpeaker() {
-            const room = cleanRoomId(document.getElementById('room_id').value);
-            const password = document.getElementById('room_password').value.trim();
-            if (room.length < 2) return alert('방 이름을 2자 이상 입력하세요.');
-            if (password.length < 4 || password.length > 32) return alert('방 비밀번호를 4~32자로 입력하세요.');
-
+            const room = cleanRoomId(document.getElementById('host_room_id').value);
+            const password = document.getElementById('host_room_password').value.trim();
+            const startButton = document.getElementById('host_start_button');
+            clearFormError('host');
+            if (room.length < 2) {
+                setFormError('host', '방 이름을 2자 이상 입력하세요.');
+                document.getElementById('host_room_id').focus();
+                return;
+            }
+            if (password.length < 4 || password.length > 32) {
+                setFormError('host', '청중 입장 비밀번호를 4~32자로 입력하세요.');
+                document.getElementById('host_room_password').focus();
+                return;
+            }
+            startButton.disabled = true;
+            startButton.innerText = '방송 준비 중…';
             try {
                 let token = sessionStorage.getItem(`lovingvoice:host-token:${room}`) || '';
                 const savedPassword = sessionStorage.getItem(`lovingvoice:room-password:${room}`) || '';
                 if (token && savedPassword && savedPassword !== password) {
-                    return alert('이 방을 시작할 때 설정한 비밀번호를 입력하세요.');
+                    setFormError('host', '이 방을 처음 시작할 때 설정한 비밀번호를 입력하세요.');
+                    return;
                 }
                 if (!token) {
                     const response = await fetch('/api/rooms', {
@@ -494,12 +833,12 @@
                 }
                 isLeaving = false;
                 speakerAuthenticated = false;
-                showActiveUI(true);
-                setStatus('offline', '마이크 권한 요청 중...');
 
                 micStream = await navigator.mediaDevices.getUserMedia({
                     audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
                 });
+                showActiveUI(true, room, password);
+                setStatus('offline', '실시간 통역 연결 중…');
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
                 
                 await audioCtx.audioWorklet.addModule('/recorder-worklet.js');
@@ -519,7 +858,8 @@
                     const data = JSON.parse(event.data);
                     if (data.type === 'authenticated') {
                         speakerAuthenticated = true;
-                        setStatus('online', engine === 'openai' ? 'GPT Realtime 방송 중 · MIC ON' : '기존 엔진 방송 중 · MIC ON');
+                        setStatus('online', engine === 'openai' ? '실시간 방송 중 · 마이크 켜짐' : '방송 중 · 마이크 켜짐');
+                        openInviteModal();
                     }
                     if (data.type === 'engine_status') setStatus(data.state || 'online', data.message);
                     if (data.type === 'engine_error') setStatus('error', data.message || '통역 엔진 오류');
@@ -528,8 +868,9 @@
                     speakerAuthenticated = false;
                     if (e.code === 4001) {
                         sessionStorage.removeItem(`lovingvoice:host-token:${room}`);
-                        alert('강연자 인증이 만료되었습니다. 같은 방 이름과 비밀번호로 다시 시작하세요.');
-                        leaveSession();
+                        leaveSession('host').then(() => {
+                            setFormError('host', '방송 권한이 만료되었습니다. 같은 방 이름과 비밀번호로 다시 시작해주세요.');
+                        });
                     } else {
                         setStatus('offline', '연결 종료됨');
                     }
@@ -547,23 +888,59 @@
                 workletNode.connect(silentGain).connect(audioCtx.destination);
             } catch (err) {
                 console.error('AudioWorklet Error:', err);
-                setStatus('error', '마이크 설정 실패 (' + err.message + ')');
+                if (!document.getElementById('active_ui').classList.contains('hidden')) {
+                    await leaveSession('host');
+                } else {
+                    micStream?.getTracks().forEach(track => track.stop());
+                    micStream = null;
+                }
+                const message = err?.name === 'NotAllowedError'
+                    ? '마이크 권한을 허용해야 강연을 시작할 수 있습니다.'
+                    : (err.message || '방송을 시작할 수 없습니다.');
+                setFormError('host', message);
+            } finally {
+                startButton.disabled = false;
+                startButton.innerText = '강연 시작';
             }
         }
 
-        function startAudience() {
-            const room = cleanRoomId(document.getElementById('room_id').value);
-            const lang = document.getElementById('lang_select').value;
-            const password = document.getElementById('room_password').value.trim();
-            if (!room) return alert('방 이름을 입력하세요.');
-            if (!password) return alert('방을 만든 강연자에게 받은 방 비밀번호를 입력하세요.');
-            sessionStorage.setItem(`lovingvoice:room-password:${room}`, password);
-            isLeaving = false;
-            showActiveUI(false);
-            ensurePlaybackContext();
-            setStatus('offline', '통역 서버 접속 중...');
-            audienceConfig = { room, lang, password };
-            connectAudience();
+        async function startAudience() {
+            const room = cleanRoomId(document.getElementById('audience_room_id').value);
+            const lang = document.getElementById('audience_lang_select').value;
+            const password = document.getElementById('audience_room_password').value.trim();
+            const joinButton = document.getElementById('audience_join_button');
+            clearFormError('audience');
+            if (!room) {
+                setFormError('audience', '초대받은 방 이름을 입력하세요.');
+                document.getElementById('audience_room_id').focus();
+                return;
+            }
+            if (!password) {
+                setFormError('audience', '강연자에게 받은 방 비밀번호를 입력하세요.');
+                document.getElementById('audience_room_password').focus();
+                return;
+            }
+            joinButton.disabled = true;
+            joinButton.innerText = '방 확인 중…';
+            try {
+                const response = await fetch(`/api/rooms/${encodeURIComponent(room)}`);
+                const status = await response.json().catch(() => ({}));
+                if (!response.ok || !status.exists) {
+                    throw new Error('현재 열려 있는 방을 찾을 수 없습니다. 방 이름을 확인해주세요.');
+                }
+                sessionStorage.setItem(`lovingvoice:room-password:${room}`, password);
+                isLeaving = false;
+                showActiveUI(false, room, password);
+                ensurePlaybackContext();
+                setStatus('offline', '방 비밀번호 확인 중…');
+                audienceConfig = { room, lang, password };
+                connectAudience();
+            } catch (error) {
+                setFormError('audience', error.message || '통역방에 입장할 수 없습니다.');
+            } finally {
+                joinButton.disabled = false;
+                joinButton.innerText = '통역방 입장';
+            }
         }
 
         function createCaptionDisplayController(area, onPromote, holdMs = COMPLETED_CAPTION_HOLD_MS) {
@@ -835,9 +1212,13 @@
                 clearInterval(heartbeatTimer);
                 if (isLeaving || !audienceConfig) return;
                 if (event.code === 4001) {
-                    alert('방 이름 또는 비밀번호가 올바르지 않습니다.');
                     audienceConfig = null;
-                    leaveSession();
+                    leaveSession('audience').then(() => {
+                        setFormError('audience', '방 비밀번호가 올바르지 않습니다. 다시 입력해주세요.');
+                        const passwordInput = document.getElementById('audience_room_password');
+                        passwordInput.select();
+                        passwordInput.focus();
+                    });
                     return;
                 }
                 setStatus('offline', '연결 끊김 · 재연결 중…');
@@ -859,18 +1240,27 @@
             const language = params.get('lang');
             const audienceMode = params.get('mode') === 'audience';
             if (room) {
-                document.getElementById('room_id').value = room;
-                document.getElementById('room_hint').innerText = `초대받은 방 '${room}'에 청중으로 입장할 수 있습니다.`;
+                document.getElementById('audience_room_id').value = room;
+                document.getElementById('audience_intro').innerText = `'${room}' 방에 청중으로 입장합니다.`;
                 const savedPassword = sessionStorage.getItem(`lovingvoice:room-password:${room}`);
-                if (savedPassword) document.getElementById('room_password').value = savedPassword;
+                if (savedPassword) document.getElementById('audience_room_password').value = savedPassword;
             }
             if (audienceMode) {
-                document.getElementById('speaker_start_button').classList.add('hidden');
-                document.getElementById('room_id').readOnly = Boolean(room);
-                document.getElementById('room_password').focus();
+                currentRole = 'audience';
+                document.getElementById('audience_room_id').readOnly = Boolean(room);
+                showScreen('audience_setup_screen');
+                document.getElementById('audience_room_password').focus();
+            } else {
+                showScreen('role_screen');
             }
-            if (language && [...document.getElementById('lang_select').options].some(option => option.value === language)) {
-                document.getElementById('lang_select').value = language;
+            if (language && [...document.getElementById('audience_lang_select').options].some(option => option.value === language)) {
+                document.getElementById('audience_lang_select').value = language;
+            }
+        });
+
+        window.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && !document.getElementById('invite_modal').classList.contains('hidden')) {
+                closeInviteModal();
             }
         });
     </script>
