@@ -136,11 +136,17 @@
         .session-action { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #334155; font-size: .82rem; font-weight: 750; }
         .session-action.primary { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
         .session-action:hover { border-color: #93c5fd; }
-        .caption-stage { height: min(62vh, 580px); min-height: 420px; margin-top: 18px; padding: 18px; border-radius: 24px; }
+        .caption-stage { display: grid; grid-template-rows: minmax(0, 8fr) minmax(0, 2fr); height: min(62vh, 580px); min-height: 420px; margin-top: 18px; padding: 18px; border-radius: 24px; }
+        .caption-history-track { display: flex; min-height: 0; flex-direction: column; overflow: hidden; }
         .caption-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px 14px; color: #64748b; font-size: .78rem; }
         .caption-meta-actions { display: flex; align-items: center; gap: 8px; }
+        .caption-history-list { min-height: 0; overscroll-behavior: contain; scrollbar-gutter: stable; }
+        .history-caption-line { display: block; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
         .history-jump.hidden { display: none; }
         .history-caption { animation: caption-rise .32s cubic-bezier(.22, 1, .36, 1) both; }
+        .caption-current-track { position: relative; display: grid; min-height: 0; align-content: center; overflow-y: auto; padding: 22px 16px 8px; border-top: 2px solid #94a3b8; background: linear-gradient(180deg, rgba(37,99,235,.04), transparent 42%); }
+        .caption-current-label { position: absolute; top: 6px; left: 16px; color: #64748b; font-size: .68rem; font-weight: 800; letter-spacing: .04em; }
+        #subtitle_area { width: 100%; min-height: 0; }
         @keyframes caption-rise {
             from { opacity: 0; transform: translateY(14px); }
             to { opacity: 1; transform: translateY(0); }
@@ -183,6 +189,8 @@
         html[data-theme="dark"] .invite-text { border-color: #475569; }
         html[data-theme="dark"] .invite-qr { border-color: #475569; }
         html[data-theme="dark"] .invite-qr-note { color: #94a3b8; }
+        html[data-theme="dark"] .caption-current-track { border-color: #475569; background: linear-gradient(180deg, rgba(59,130,246,.09), transparent 42%); }
+        html[data-theme="dark"] .caption-current-label { color: #94a3b8; }
         @media (prefers-reduced-motion: reduce) {
             .history-caption { animation: none; }
         }
@@ -340,17 +348,22 @@
                 </div>
             </header>
 
-            <div class="glass caption-stage flex flex-col w-full text-left overflow-hidden">
-                <div class="caption-meta">
-                    <span id="recent_history_label">최근 5분 · 최대 20개</span>
-                    <div class="caption-meta-actions">
-                        <button id="history_jump_button" type="button" onclick="scrollToLatestCaption()" class="session-action history-jump hidden">최신 자막</button>
-                        <span id="route_badge" class="session-chip">공유 언어 채널</span>
+            <div class="glass caption-stage w-full text-left overflow-hidden">
+                <div class="caption-history-track">
+                    <div class="caption-meta">
+                        <span id="recent_history_label">지난 자막 · 최대 20개</span>
+                        <div class="caption-meta-actions">
+                            <button id="history_jump_button" type="button" onclick="scrollToLatestCaption()" class="session-action history-jump hidden">최신 자막</button>
+                            <span id="route_badge" class="session-chip">공유 언어 채널</span>
+                        </div>
                     </div>
+                    <div id="history_area" tabindex="0" role="log" aria-live="polite" aria-relevant="additions" aria-label="완료된 지난 자막입니다. 위아래로 스크롤할 수 있습니다." class="caption-history-list flex-1 overflow-y-auto space-y-3 pb-4 opacity-70 text-xl md:text-2xl font-medium px-4 scroll-smooth"></div>
                 </div>
-                <div id="history_area" tabindex="0" aria-live="polite" aria-label="완료된 최근 자막입니다. 위아래로 스크롤할 수 있습니다." class="flex-1 overflow-y-auto space-y-3 pb-4 opacity-70 text-xl md:text-2xl font-medium px-4 scroll-smooth"></div>
-                <div id="subtitle_area" aria-live="assertive" class="text-2xl md:text-4xl font-bold leading-tight break-keep pt-4 border-t border-slate-700 px-4 min-h-[80px] text-blue-100">
-                    강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.
+                <div class="caption-current-track">
+                    <span id="current_caption_label" class="caption-current-label">현재 자막</span>
+                    <div id="subtitle_area" role="status" aria-live="assertive" aria-atomic="true" class="text-2xl md:text-4xl font-bold leading-tight break-keep text-blue-100">
+                        강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.
+                    </div>
                 </div>
             </div>
 
@@ -584,7 +597,8 @@
                 : '강연자의 다음 실시간 통역을 기다리는 중…';
             document.getElementById('recent_history_label').innerText = isSpeaker
                 ? '완료된 강연 자막'
-                : `최근 5분 · 최대 ${AUDIENCE_HISTORY_MAX_ITEMS}개`;
+                : `지난 자막 · 최대 ${AUDIENCE_HISTORY_MAX_ITEMS}개`;
+            document.getElementById('current_caption_label').innerText = isSpeaker ? '현재 강연 자막' : '현재 자막';
             document.getElementById('route_badge').innerText = isSpeaker ? '언어별 공유 전송' : '공유 언어 채널';
             const historyBox = document.getElementById('history_area');
             historyBox.onscroll = null;
@@ -775,7 +789,8 @@
             if (!text) return;
             const history = document.getElementById('history_area');
             const item = document.createElement('p');
-            item.className = 'border-l-2 border-slate-600 pl-3';
+            item.className = 'history-caption-line border-l-2 border-slate-600 pl-3';
+            item.setAttribute('role', 'listitem');
             item.innerText = text;
             history.appendChild(item);
             while (history.childElementCount > 30) history.firstElementChild?.remove();
@@ -1360,8 +1375,12 @@
                 const captionId = item.id || '';
                 if (!text || text.includes('통역 자막이') || text.includes('Speaking')) return;
                 if (captionId && seenCaptionIds.has(captionId)) return;
+                const previousOffsets = animate
+                    ? new Map([...historyBox.children].map(element => [element, element.offsetTop]))
+                    : null;
                 const p = document.createElement('p');
-                p.className = 'border-l-2 border-slate-600 pl-3';
+                p.className = 'history-caption-line border-l-2 border-slate-600 pl-3';
+                p.setAttribute('role', 'listitem');
                 if (animate) p.classList.add('history-caption');
                 p.innerText = text;
                 if (captionId) {
@@ -1372,6 +1391,18 @@
                 const shouldFollowLatest = followLatest && isNearHistoryBottom();
                 historyBox.appendChild(p);
                 trimRecentHistory();
+                if (previousOffsets && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    previousOffsets.forEach((previousTop, element) => {
+                        if (!element.isConnected) return;
+                        const offset = previousTop - element.offsetTop;
+                        if (offset) {
+                            element.animate(
+                                [{ transform: `translateY(${offset}px)` }, { transform: 'translateY(0)' }],
+                                { duration: 320, easing: 'cubic-bezier(.22, 1, .36, 1)' }
+                            );
+                        }
+                    });
+                }
                 if (shouldFollowLatest) {
                     requestAnimationFrame(() => scrollToLatestCaption({ behavior: animate ? 'smooth' : 'auto' }));
                 } else {
@@ -1437,8 +1468,7 @@
                         Math.max(1, Number(data.policy?.max_items) || AUDIENCE_HISTORY_MAX_ITEMS)
                     );
                     recentHistoryMaxAgeMs = Math.max(30000, (Number(data.policy?.max_age_seconds) || 300) * 1000);
-                    const recentMinutes = Math.max(1, Math.round(recentHistoryMaxAgeMs / 60000));
-                    document.getElementById('recent_history_label').innerText = `최근 ${recentMinutes}분 · 최대 ${recentHistoryLimit}개`;
+                    document.getElementById('recent_history_label').innerText = `지난 자막 · 최대 ${recentHistoryLimit}개`;
                     (data.items || []).forEach(item => renderHistoryItem(item, { animate: false, followLatest: false }));
                     trimRecentHistory();
                     requestAnimationFrame(() => scrollToLatestCaption({ behavior: 'auto' }));
