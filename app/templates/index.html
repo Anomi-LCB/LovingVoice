@@ -25,9 +25,10 @@
                 </div>
                 <p id="room_hint" class="mt-2 text-xs text-slate-400">기존 코드를 입력하거나 안전한 새 방을 만드세요.</p>
             </div>
-            <div id="speaker_pass_container">
-                <label class="block text-sm font-medium mb-1">🔐 강연자 비밀번호</label>
-                <input type="password" id="speaker_pass" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="입장 시 필수">
+            <div>
+                <label class="block text-sm font-medium mb-1">방 비밀번호</label>
+                <input type="text" id="room_password" maxlength="8" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 uppercase tracking-widest focus:ring-2 focus:ring-blue-500 outline-none" placeholder="방 생성 시 자동으로 만들어집니다">
+                <p class="mt-2 text-xs text-slate-400">청중은 방 코드와 이 비밀번호가 모두 필요합니다.</p>
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">내 언어 (수신용)</label>
@@ -60,7 +61,7 @@
                 <span id="status_text" class="text-sm font-medium">연결 준비 중...</span>
             </div>
             <div class="flex flex-wrap items-center justify-end gap-2">
-                <button onclick="copyAudienceLink()" class="text-sm bg-blue-950 hover:bg-blue-900 px-3 py-1.5 rounded-full border border-blue-800">초대 링크 복사</button>
+                <button onclick="copyAudienceLink()" class="text-sm bg-blue-950 hover:bg-blue-900 px-3 py-1.5 rounded-full border border-blue-800">초대 정보 복사</button>
                 <div id="room_display" class="text-sm bg-slate-800 px-3 py-1 rounded-full border border-slate-700">ROOM: -</div>
                 <button onclick="leaveSession()" class="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-full border border-slate-700">나가기</button>
             </div>
@@ -150,9 +151,10 @@
                 if (!response.ok) throw new Error('방을 만들 수 없습니다.');
                 const room = await response.json();
                 document.getElementById('room_id').value = room.room_id;
-                document.getElementById('speaker_pass').value = '';
+                document.getElementById('room_password').value = room.room_password;
                 sessionStorage.setItem(`lovingvoice:host-token:${room.room_id}`, room.speaker_token);
-                document.getElementById('room_hint').innerText = `안전한 방 ${room.room_id}이 준비되었습니다. 초대 링크를 공유하세요.`;
+                sessionStorage.setItem(`lovingvoice:room-password:${room.room_id}`, room.room_password);
+                document.getElementById('room_hint').innerText = `방 ${room.room_id}이 준비되었습니다. 방 코드와 비밀번호를 함께 공유하세요.`;
                 history.replaceState({}, '', `/?room=${encodeURIComponent(room.room_id)}`);
             } catch (error) {
                 alert(error.message || '새 방 생성에 실패했습니다.');
@@ -167,11 +169,15 @@
             const url = new URL(window.location.href);
             url.search = '';
             url.searchParams.set('room', room);
+            const roomPassword = document.getElementById('room_password').value.trim().toUpperCase();
+            const invitation = roomPassword
+                ? `LovingVoice 초대\n${url}\n방 비밀번호: ${roomPassword}`
+                : url.toString();
             try {
-                await navigator.clipboard.writeText(url.toString());
-                setStatus('online', '청중 초대 링크를 복사했습니다.');
+                await navigator.clipboard.writeText(invitation);
+                setStatus('online', '방 코드와 비밀번호를 포함한 초대 정보를 복사했습니다.');
             } catch (error) {
-                prompt('아래 초대 링크를 복사하세요.', url.toString());
+                prompt('아래 초대 정보를 복사하세요.', invitation);
             }
         }
 
@@ -394,9 +400,8 @@
             if (!room) return alert('방 코드를 입력하세요.');
 
             try {
-                const pass = document.getElementById('speaker_pass').value;
                 const token = sessionStorage.getItem(`lovingvoice:host-token:${room}`) || '';
-                if (!token && !pass) return alert('새 방을 만들거나 강연자 비밀번호를 입력해주세요.');
+                if (!token) return alert('먼저 새 방을 만들어주세요. 강연자는 생성된 방에서만 시작할 수 있습니다.');
                 isLeaving = false;
                 speakerAuthenticated = false;
                 showActiveUI(true);
@@ -418,7 +423,7 @@
                 
                 ws.onopen = () => {
                     setStatus('offline', '강연자 권한 확인 중...');
-                    ws.send(JSON.stringify({ type: 'authenticate', token, password: pass }));
+                    ws.send(JSON.stringify({ type: 'authenticate', token }));
                 };
                 ws.onmessage = (event) => {
                     const data = JSON.parse(event.data);
@@ -433,7 +438,7 @@
                     speakerAuthenticated = false;
                     if (e.code === 4001) {
                         sessionStorage.removeItem(`lovingvoice:host-token:${room}`);
-                        alert('❌ 강연자 인증이 만료되었거나 비밀번호가 틀렸습니다.');
+                        alert('강연자 인증이 만료되었습니다. 새 방을 다시 만들어주세요.');
                         leaveSession();
                     } else {
                         setStatus('offline', '연결 종료됨');
@@ -459,18 +464,20 @@
         function startAudience() {
             const room = cleanRoomId(document.getElementById('room_id').value);
             const lang = document.getElementById('lang_select').value;
+            const password = document.getElementById('room_password').value.trim().toUpperCase();
             if (!room) return alert('방 코드를 입력하세요.');
+            if (!password) return alert('방을 만든 강연자에게 받은 방 비밀번호를 입력하세요.');
             isLeaving = false;
             showActiveUI(false);
             ensurePlaybackContext();
             setStatus('offline', '통역 서버 접속 중...');
-            audienceConfig = { room, lang };
+            audienceConfig = { room, lang, password };
             connectAudience();
         }
 
         function connectAudience() {
             if (!audienceConfig || isLeaving) return;
-            const { room, lang } = audienceConfig;
+            const { room, lang, password } = audienceConfig;
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/audience/${encodeURIComponent(room)}/${encodeURIComponent(lang)}`);
@@ -556,7 +563,8 @@
             }
 
             ws.onopen = () => {
-                setStatus('online', '통역 수신 중 (' + lang + ')');
+                setStatus('offline', '방 비밀번호 확인 중...');
+                ws.send(JSON.stringify({ type: 'authenticate', password }));
                 clearInterval(heartbeatTimer);
                 heartbeatTimer = setInterval(() => {
                     if (ws?.readyState === WebSocket.OPEN) ws.send('ping');
@@ -643,9 +651,15 @@
                     }
                 }
             };
-            ws.onclose = () => {
+            ws.onclose = event => {
                 clearInterval(heartbeatTimer);
                 if (isLeaving || !audienceConfig) return;
+                if (event.code === 4001) {
+                    alert('방 코드 또는 비밀번호가 올바르지 않습니다.');
+                    audienceConfig = null;
+                    leaveSession();
+                    return;
+                }
                 setStatus('offline', '연결 끊김 · 재연결 중…');
                 clearTimeout(reconnectTimer);
                 reconnectTimer = setTimeout(connectAudience, 1500);
@@ -665,6 +679,8 @@
             if (room) {
                 document.getElementById('room_id').value = room;
                 document.getElementById('room_hint').innerText = `초대받은 방 ${room}에 입장할 수 있습니다.`;
+                const savedPassword = sessionStorage.getItem(`lovingvoice:room-password:${room}`);
+                if (savedPassword) document.getElementById('room_password').value = savedPassword;
             }
             if (language && [...document.getElementById('lang_select').options].some(option => option.value === language)) {
                 document.getElementById('lang_select').value = language;

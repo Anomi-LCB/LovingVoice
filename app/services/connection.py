@@ -43,13 +43,14 @@ class ConnectionManager:
             except ValueError:
                 pass
 
-    async def add_audience(self, room_id, lang, websocket):
+    async def add_audience(self, room_id, lang, websocket, *, accept=True):
         if room_id not in self.active_connections:
             self.active_connections[room_id] = {}
         if lang not in self.active_connections[room_id]:
             self.active_connections[room_id][lang] = []
         self.active_connections[room_id][lang].append(websocket)
-        await websocket.accept()
+        if accept:
+            await websocket.accept()
 
     def remove_audience(self, room_id, lang, websocket):
         try:

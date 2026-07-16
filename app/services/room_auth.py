@@ -1,4 +1,4 @@
-"""Short-lived, room-scoped speaker credentials for LovingVoice."""
+"""Short-lived room credentials for LovingVoice hosts and audiences."""
 
 from __future__ import annotations
 
@@ -14,14 +14,44 @@ import time
 class RoomTokenManager:
     def __init__(self, secret: str | None = None, ttl_seconds: int = 12 * 60 * 60):
         configured_secret = secret or os.getenv("ROOM_SIGNING_SECRET")
-        legacy_password = os.getenv("SPEAKER_PASSWORD", "")
-        self.secret = (configured_secret or legacy_password or secrets.token_urlsafe(32)).encode()
+        self.secret = (configured_secret or secrets.token_urlsafe(32)).encode()
         self.ttl_seconds = ttl_seconds
+        self.rooms: dict[str, dict[str, bytes | int]] = {}
 
     @staticmethod
     def create_room_id() -> str:
         """Return an easy-to-share six digit room code."""
         return f"{secrets.randbelow(900_000) + 100_000:06d}"
+
+    @staticmethod
+    def create_room_password(length: int = 8) -> str:
+        """Generate a readable password without ambiguous characters."""
+        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        return "".join(secrets.choice(alphabet) for _ in range(length))
+
+    def create_room(self) -> dict[str, str | int]:
+        """Create a room and retain only a salted password digest."""
+        self._prune_expired_rooms()
+        room_id = self.create_room_id()
+        while room_id in self.rooms:
+            room_id = self.create_room_id()
+        password = self.create_room_password()
+        salt = secrets.token_bytes(16)
+        password_digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, 200_000
+        )
+        expires_at = int(time.time()) + self.ttl_seconds
+        self.rooms[room_id] = {
+            "salt": salt,
+            "password_digest": password_digest,
+            "expires_at": expires_at,
+        }
+        return {
+            "room_id": room_id,
+            "room_password": password,
+            "speaker_token": self.issue(room_id, expires_at=expires_at),
+            "expires_in_seconds": self.ttl_seconds,
+        }
 
     @staticmethod
     def _encode(value: bytes) -> str:
@@ -31,10 +61,10 @@ class RoomTokenManager:
     def _decode(value: str) -> bytes:
         return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
-    def issue(self, room_id: str) -> str:
+    def issue(self, room_id: str, *, expires_at: int | None = None) -> str:
         payload = {
             "room_id": room_id,
-            "expires_at": int(time.time()) + self.ttl_seconds,
+            "expires_at": expires_at or int(time.time()) + self.ttl_seconds,
             "nonce": secrets.token_hex(8),
         }
         encoded_payload = self._encode(
@@ -62,15 +92,32 @@ class RoomTokenManager:
         except (ValueError, TypeError, KeyError, json.JSONDecodeError):
             return False
 
-    def authenticate(self, room_id: str, message: dict) -> bool:
-        token = message.get("token", "")
-        if token and self.verify(room_id, token):
-            return True
+    def verify_speaker_token(self, room_id: str, token: str) -> bool:
+        return self.room_exists(room_id) and self.verify(room_id, token)
 
-        # Transitional compatibility for manually entered room codes. The
-        # password now travels inside TLS/WebSocket data, never in the URL.
-        configured_password = os.getenv("SPEAKER_PASSWORD", "loving77")
-        supplied_password = str(message.get("password", ""))
-        return bool(configured_password) and hmac.compare_digest(
-            supplied_password, configured_password
+    def verify_room_password(self, room_id: str, password: str) -> bool:
+        self._prune_expired_rooms()
+        room = self.rooms.get(room_id)
+        if not room or not password:
+            return False
+        supplied_digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.strip().upper().encode("utf-8"),
+            room["salt"],
+            200_000,
         )
+        return hmac.compare_digest(supplied_digest, room["password_digest"])
+
+    def room_exists(self, room_id: str) -> bool:
+        self._prune_expired_rooms()
+        return room_id in self.rooms
+
+    def _prune_expired_rooms(self) -> None:
+        now = int(time.time())
+        expired = [
+            room_id
+            for room_id, room in self.rooms.items()
+            if int(room["expires_at"]) < now
+        ]
+        for room_id in expired:
+            del self.rooms[room_id]

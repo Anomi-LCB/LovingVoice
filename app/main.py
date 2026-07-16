@@ -74,6 +74,7 @@ async def health():
 @app.get("/api/rooms/{room_id}")
 async def room_status(room_id: str):
     status = manager.room_status(room_id)
+    status["exists"] = room_tokens.room_exists(room_id)
     status.update(
         {
             "translation_routes": realtime_hub.route_status(room_id),
@@ -85,15 +86,11 @@ async def room_status(room_id: str):
 
 @app.post("/api/rooms")
 async def create_room():
-    """Create a shareable room and a short-lived, room-scoped host token."""
-    room_id = room_tokens.create_room_id()
-    while room_id in manager.active_speakers:
-        room_id = room_tokens.create_room_id()
+    """Create a room password for audiences and a private host token."""
+    room = room_tokens.create_room()
     return {
-        "room_id": room_id,
-        "speaker_token": room_tokens.issue(room_id),
-        "audience_path": f"/?room={room_id}",
-        "expires_in_seconds": room_tokens.ttl_seconds,
+        **room,
+        "audience_path": f"/?room={room['room_id']}",
     }
 
 import queue
@@ -112,8 +109,8 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
     except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
         await websocket.close(code=4001, reason="Speaker authentication required")
         return
-    if auth_message.get("type") != "authenticate" or not room_tokens.authenticate(
-        room_id, auth_message
+    if auth_message.get("type") != "authenticate" or not room_tokens.verify_speaker_token(
+        room_id, str(auth_message.get("token", ""))
     ):
         logger.warning("Speaker connection rejected for room %s", room_id)
         await websocket.close(code=4001, reason="Invalid speaker credential")
@@ -325,7 +322,20 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
 
 @app.websocket("/ws/audience/{room_id}/{lang}")
 async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
-    await manager.add_audience(room_id, lang, websocket)
+    await websocket.accept()
+    try:
+        auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=8)
+    except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
+        await websocket.close(code=4001, reason="Room password required")
+        return
+    if auth_message.get("type") != "authenticate" or not room_tokens.verify_room_password(
+        room_id, str(auth_message.get("password", ""))
+    ):
+        logger.warning("Audience authentication rejected for room %s", room_id)
+        await websocket.close(code=4001, reason="Invalid room password")
+        return
+
+    await manager.add_audience(room_id, lang, websocket, accept=False)
     await websocket.send_json(
         {
             "type": "history_snapshot",
