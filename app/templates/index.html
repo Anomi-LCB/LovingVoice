@@ -154,8 +154,16 @@
         .modal-layer { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; }
         .modal-layer.hidden { display: none; }
         .modal-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,.5); backdrop-filter: blur(3px); }
-        .modal-card { position: relative; width: min(100%, 540px); padding: 28px; border-radius: 24px; background: #fff; color: #172033; box-shadow: 0 30px 90px rgba(15,23,42,.28); }
+        .modal-card { position: relative; width: min(100%, 540px); max-height: calc(100vh - 32px); overflow-y: auto; padding: 28px; border-radius: 24px; background: #fff; color: #172033; box-shadow: 0 30px 90px rgba(15,23,42,.28); }
+        .invite-modal-card { width: min(100%, 760px); }
         .modal-close { position: absolute; top: 16px; right: 16px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: #f1f5f9; color: #475569; font-size: 1.2rem; }
+        .invite-content { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 22px; align-items: start; margin-top: 20px; }
+        .invite-qr-panel { display: grid; justify-items: center; gap: 10px; }
+        .invite-qr { display: grid; width: 220px; height: 220px; place-items: center; padding: 12px; border: 1px solid #e2e8f0; border-radius: 18px; background: #fff; }
+        .invite-qr canvas, .invite-qr img { width: 196px !important; height: 196px !important; }
+        .invite-qr-note { color: #64748b; font-size: .76rem; line-height: 1.45; text-align: center; }
+        .invite-qr-error { color: #dc2626; font-size: .82rem; text-align: center; }
+        .invite-qr-error.hidden { display: none; }
         .invite-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0; }
         .invite-item { padding: 13px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
         .invite-item label { display: block; margin-bottom: 4px; color: #64748b; font-size: .72rem; font-weight: 700; }
@@ -173,6 +181,8 @@
         html[data-theme="dark"] .support-list, html[data-theme="dark"] .invite-item { border-color: #334155; }
         html[data-theme="dark"] .modal-card { background: #1e293b; color: #f8fafc; }
         html[data-theme="dark"] .invite-text { border-color: #475569; }
+        html[data-theme="dark"] .invite-qr { border-color: #475569; }
+        html[data-theme="dark"] .invite-qr-note { color: #94a3b8; }
         @media (prefers-reduced-motion: reduce) {
             .history-caption { animation: none; }
         }
@@ -191,6 +201,7 @@
             .caption-stage { height: calc(100vh - 230px); min-height: 450px; padding: 14px 10px; }
             .host-controls { justify-content: stretch; }
             .control-button { flex: 1 1 calc(50% - 8px); }
+            .invite-content { grid-template-columns: 1fr; }
             .invite-grid { grid-template-columns: 1fr; }
         }
         .pulse-red { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
@@ -356,20 +367,31 @@
 
     <div id="invite_modal" class="modal-layer hidden" role="dialog" aria-modal="true" aria-labelledby="invite_modal_title">
         <div class="modal-backdrop" onclick="closeInviteModal()"></div>
-        <section class="modal-card">
+        <section class="modal-card invite-modal-card">
             <button type="button" class="modal-close" onclick="closeInviteModal()" aria-label="초대 정보 닫기">×</button>
             <span class="step-label">청중에게 전달할 정보</span>
             <h2 id="invite_modal_title" class="form-title mt-2">청중 초대</h2>
-            <p class="form-copy">아래 내용을 그대로 전달하면 링크가 청중 입장 화면으로 열립니다.</p>
-            <div class="invite-grid">
-                <div class="invite-item"><label>방 이름</label><strong id="invite_room_name">-</strong></div>
-                <div class="invite-item"><label>방 비밀번호</label><strong id="invite_room_password">-</strong></div>
-            </div>
-            <textarea id="invite_text" class="invite-text" readonly aria-label="복사할 청중 초대 정보"></textarea>
-            <p id="invite_copy_status" class="copy-status" role="status"></p>
-            <div class="button-row">
-                <button type="button" class="primary-button" onclick="copyAudienceLink()">초대 정보 복사</button>
-                <button type="button" class="secondary-button" onclick="closeInviteModal()">닫기</button>
+            <p class="form-copy">QR을 스캔하거나 초대 정보를 전달하면 청중 입장 화면으로 바로 연결됩니다.</p>
+            <div class="invite-content">
+                <div class="invite-qr-panel">
+                    <div id="invite_qr" class="invite-qr" role="img" aria-label="청중 입장 QR 코드">
+                        <span id="invite_qr_error" class="invite-qr-error hidden">QR을 생성할 수 없습니다.</span>
+                    </div>
+                    <p class="invite-qr-note">스캔하면 방 이름과 비밀번호가 자동으로 입력됩니다.</p>
+                    <button type="button" class="secondary-button" onclick="downloadInviteQr()">QR 이미지 저장</button>
+                </div>
+                <div>
+                    <div class="invite-grid">
+                        <div class="invite-item"><label>방 이름</label><strong id="invite_room_name">-</strong></div>
+                        <div class="invite-item"><label>방 비밀번호</label><strong id="invite_room_password">-</strong></div>
+                    </div>
+                    <textarea id="invite_text" class="invite-text" readonly aria-label="복사할 청중 초대 정보"></textarea>
+                    <p id="invite_copy_status" class="copy-status" role="status"></p>
+                    <div class="button-row">
+                        <button type="button" class="primary-button" onclick="copyAudienceLink()">초대 정보 복사</button>
+                        <button type="button" class="secondary-button" onclick="closeInviteModal()">닫기</button>
+                    </div>
+                </div>
             </div>
         </section>
     </div>
@@ -401,6 +423,7 @@
         </form>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script>
         let ws;
         let audioCtx;
@@ -586,13 +609,61 @@
                 .slice(0, 40);
         }
 
+        function buildAudienceInviteUrl({ includePassword = false } = {}) {
+            const url = new URL(window.location.href);
+            url.search = '';
+            url.hash = '';
+            url.searchParams.set('room', currentRoom);
+            url.searchParams.set('mode', 'audience');
+            if (includePassword && currentRoomPassword) {
+                url.hash = new URLSearchParams({ password: currentRoomPassword }).toString();
+            }
+            return url;
+        }
+
+        function renderInviteQr() {
+            const qrBox = document.getElementById('invite_qr');
+            qrBox.replaceChildren();
+            qrBox.setAttribute('aria-label', `${currentRoom} 방 청중 입장 QR 코드`);
+            try {
+                if (typeof QRCode === 'undefined') throw new Error('QR library unavailable');
+                new QRCode(qrBox, {
+                    text: buildAudienceInviteUrl({ includePassword: true }).toString(),
+                    width: 196,
+                    height: 196,
+                    colorDark: '#0f172a',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            } catch (error) {
+                const message = document.createElement('span');
+                message.className = 'invite-qr-error';
+                message.innerText = 'QR을 생성할 수 없습니다.';
+                qrBox.appendChild(message);
+                console.error('Invite QR generation failed', error);
+            }
+        }
+
+        function downloadInviteQr() {
+            const qrBox = document.getElementById('invite_qr');
+            const canvas = qrBox.querySelector('canvas');
+            const image = qrBox.querySelector('img');
+            const imageUrl = canvas?.toDataURL('image/png') || image?.src;
+            if (!imageUrl) {
+                document.getElementById('invite_copy_status').innerText = 'QR 이미지가 준비되지 않았습니다.';
+                return;
+            }
+            const link = document.createElement('a');
+            link.href = imageUrl;
+            link.download = `LovingVoice-${currentRoom}-invite.png`;
+            link.click();
+            document.getElementById('invite_copy_status').innerText = 'QR 이미지를 저장했습니다.';
+        }
+
         async function copyAudienceLink() {
             const room = currentRoom;
             if (!room) return;
-            const url = new URL(window.location.href);
-            url.search = '';
-            url.searchParams.set('room', room);
-            url.searchParams.set('mode', 'audience');
+            const url = buildAudienceInviteUrl();
             const roomPassword = currentRoomPassword;
             const invitation = roomPassword
                 ? `LovingVoice 청중 초대\n방 이름: ${room}\n방 비밀번호: ${roomPassword}\n입장 링크: ${url}`
@@ -611,16 +682,14 @@
 
         function openInviteModal() {
             if (!currentRoom || currentRole !== 'host') return;
-            const url = new URL(window.location.href);
-            url.search = '';
-            url.searchParams.set('room', currentRoom);
-            url.searchParams.set('mode', 'audience');
+            const url = buildAudienceInviteUrl();
             const invitation = `LovingVoice 청중 초대\n방 이름: ${currentRoom}\n방 비밀번호: ${currentRoomPassword}\n입장 링크: ${url}`;
             document.getElementById('invite_room_name').innerText = currentRoom;
             document.getElementById('invite_room_password').innerText = currentRoomPassword;
             document.getElementById('invite_text').value = invitation;
             document.getElementById('invite_copy_status').innerText = '';
             document.getElementById('invite_modal').classList.remove('hidden');
+            requestAnimationFrame(renderInviteQr);
             document.querySelector('#invite_modal .modal-close')?.focus();
         }
 
@@ -1469,20 +1538,25 @@
         window.addEventListener('DOMContentLoaded', () => {
             applyTheme(document.documentElement.dataset.theme, { persist: false });
             const params = new URLSearchParams(window.location.search);
+            const inviteParams = new URLSearchParams(window.location.hash.slice(1));
             const room = cleanRoomId(params.get('room') || '');
             const language = params.get('lang');
             const audienceMode = params.get('mode') === 'audience';
+            const invitedPassword = inviteParams.get('password') || '';
             if (room) {
                 document.getElementById('audience_room_id').value = room;
                 document.getElementById('audience_intro').innerText = `'${room}' 방에 청중으로 입장합니다.`;
                 const savedPassword = sessionStorage.getItem(`lovingvoice:room-password:${room}`);
-                if (savedPassword) document.getElementById('audience_room_password').value = savedPassword;
+                if (invitedPassword || savedPassword) {
+                    document.getElementById('audience_room_password').value = invitedPassword || savedPassword;
+                }
             }
+            if (invitedPassword) history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
             if (audienceMode) {
                 currentRole = 'audience';
                 document.getElementById('audience_room_id').readOnly = Boolean(room);
                 showScreen('audience_setup_screen');
-                document.getElementById('audience_room_password').focus();
+                document.getElementById(invitedPassword ? 'audience_lang_select' : 'audience_room_password').focus();
             } else {
                 showScreen('role_screen');
             }
