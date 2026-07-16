@@ -1,4 +1,6 @@
+import base64
 import json
+import struct
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -15,12 +17,16 @@ class FakeAudience:
         self.client_state = FakeClientState()
         self.accepted = False
         self.messages = []
+        self.binary_messages = []
 
     async def accept(self):
         self.accepted = True
 
     async def send_json(self, message):
         self.messages.append(message)
+
+    async def send_bytes(self, message):
+        self.binary_messages.append(message)
 
 
 class SlowAudience(FakeAudience):
@@ -75,6 +81,38 @@ async def test_same_language_audiences_share_one_language_channel():
 
     assert all(audience.messages == [message] for audience in english_audience)
     assert all(audience.messages == [] for audience in japanese_audience)
+
+
+@pytest.mark.asyncio
+async def test_negotiated_pcm_audio_uses_compact_binary_frame_with_json_fallback():
+    manager = ConnectionManager()
+    binary_audience = FakeAudience()
+    legacy_audience = FakeAudience()
+    pcm = b"\x01\x00\xff\x7f"
+    source_id = "1234567890abcdef1234567890abcdef"
+    message = {
+        "type": "audio_delta",
+        "audio": base64.b64encode(pcm).decode("ascii"),
+        "sample_rate": 24000,
+        "source_id": source_id,
+    }
+
+    await manager.add_audience(
+        "room",
+        "ko-KR",
+        binary_audience,
+        audio_transport="pcm16-v1",
+    )
+    await manager.add_audience("room", "ko-KR", legacy_audience)
+    await manager.broadcast_json_to_language("room", "ko-KR", message)
+
+    frame = binary_audience.binary_messages[0]
+    assert frame[:4] == b"LV01"
+    assert struct.unpack("<I", frame[4:8])[0] == 24000
+    assert frame[8:40].rstrip(b"\0").decode("ascii") == source_id
+    assert frame[40:] == pcm
+    assert binary_audience.messages == []
+    assert legacy_audience.messages == [message]
 
 
 @pytest.mark.asyncio

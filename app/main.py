@@ -408,6 +408,9 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
 @app.websocket("/ws/audience/{room_id}/{lang}")
 async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
     await websocket.accept()
+    audio_transport = websocket.query_params.get("transport", "json")
+    if audio_transport != "pcm16-v1":
+        audio_transport = "json"
     if lang not in LANGUAGE_CODES:
         await websocket.close(code=4004, reason="Unsupported translation language")
         return
@@ -423,7 +426,13 @@ async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
         await websocket.close(code=4001, reason="Invalid room password")
         return
 
-    await manager.add_audience(room_id, lang, websocket, accept=False)
+    await manager.add_audience(
+        room_id,
+        lang,
+        websocket,
+        accept=False,
+        audio_transport=audio_transport,
+    )
     await realtime_hub.prepare_language(manager.resolve_room_id(room_id), lang)
     await websocket.send_json(
         {

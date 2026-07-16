@@ -1,7 +1,10 @@
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import os
+import struct
 import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import WebSocket
@@ -12,6 +15,10 @@ class ConnectionManager:
     def __init__(self):
         # 구조: {room_id: {lang: [websocket, websocket]}}
         self.active_connections = {}
+        # New listeners can opt into a compact binary PCM stream. Keeping the
+        # transport per websocket lets already-open/older pages continue to
+        # receive the JSON/Base64 format during rolling deploys.
+        self.audience_audio_transports = {}
         # 강연자 관리: {room_id: [websocket]}
         self.active_speakers = {}
         # Late joiners receive only a small, recent context window. Count, age,
@@ -63,18 +70,28 @@ class ConnectionManager:
             except ValueError:
                 pass
 
-    async def add_audience(self, room_id, lang, websocket, *, accept=True):
+    async def add_audience(
+        self,
+        room_id,
+        lang,
+        websocket,
+        *,
+        accept=True,
+        audio_transport="json",
+    ):
         room_id = self.resolve_room_id(room_id)
         if room_id not in self.active_connections:
             self.active_connections[room_id] = {}
         if lang not in self.active_connections[room_id]:
             self.active_connections[room_id][lang] = []
         self.active_connections[room_id][lang].append(websocket)
+        self.audience_audio_transports[id(websocket)] = audio_transport
         if accept:
             await websocket.accept()
 
     def remove_audience(self, room_id, lang, websocket):
         room_id = self.resolve_room_id(room_id)
+        self.audience_audio_transports.pop(id(websocket), None)
         try:
             if room_id in self.active_connections and lang in self.active_connections[room_id]:
                 self.active_connections[room_id][lang].remove(websocket)
@@ -170,13 +187,43 @@ class ConnectionManager:
         room_id = self.resolve_room_id(room_id)
         room = self.active_connections.get(room_id, {})
         websockets = room.get(lang, [])
-        send_tasks = [
-            asyncio.wait_for(
-                ws.send_json(data), timeout=self.realtime_send_timeout
+        connected = [ws for ws in websockets if ws.client_state.name == "CONNECTED"]
+        binary_audio_frame = None
+        if data.get("type") == "audio_delta" and any(
+            self.audience_audio_transports.get(id(ws)) == "pcm16-v1"
+            for ws in connected
+        ):
+            try:
+                pcm = base64.b64decode(data.get("audio", ""), validate=True)
+                source_id = (
+                    str(data.get("source_id", "default"))
+                    .encode("ascii", errors="ignore")[:32]
+                    .ljust(32, b"\0")
+                )
+                # LV01 + uint32 little-endian sample rate + fixed 32-byte source id.
+                # The 40-byte aligned header lets browsers create an Int16Array
+                # directly over the websocket ArrayBuffer without another copy.
+                binary_audio_frame = (
+                    b"LV01"
+                    + struct.pack("<I", int(data.get("sample_rate", 24000)))
+                    + source_id
+                    + pcm
+                )
+            except (TypeError, ValueError, binascii.Error):
+                logger.warning("Invalid realtime PCM payload for %s/%s", room_id, lang)
+
+        send_tasks = []
+        for ws in connected:
+            if (
+                binary_audio_frame is not None
+                and self.audience_audio_transports.get(id(ws)) == "pcm16-v1"
+            ):
+                send = ws.send_bytes(binary_audio_frame)
+            else:
+                send = ws.send_json(data)
+            send_tasks.append(
+                asyncio.wait_for(send, timeout=self.realtime_send_timeout)
             )
-            for ws in websockets
-            if ws.client_state.name == "CONNECTED"
-        ]
         if send_tasks:
             await asyncio.gather(*send_tasks, return_exceptions=True)
 

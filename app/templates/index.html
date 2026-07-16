@@ -470,6 +470,8 @@
         let ws;
         let audioCtx;
         let playbackCtx;
+        let playbackUnlockCleanup = null;
+        let playbackBlockedNoticeShown = false;
         let workletNode;
         let micStream;
         const nextPlaybackTimes = new Map();
@@ -505,8 +507,8 @@
         const COMPLETED_CAPTION_HOLD_MS = 2200;
         const AUDIENCE_HISTORY_MAX_ITEMS = 20;
         const RECORDING_TRANSCRIPT_GRACE_MS = 1600;
-        const PLAYBACK_START_LEAD_SECONDS = 0.012;
-        const PLAYBACK_MAX_QUEUE_SECONDS = 0.65;
+        const PLAYBACK_START_LEAD_SECONDS = 0.008;
+        const PLAYBACK_MAX_QUEUE_SECONDS = 0.45;
 
         function applyTheme(theme, { persist = true } = {}) {
             const nextTheme = theme === 'dark' ? 'dark' : 'light';
@@ -1229,6 +1231,9 @@
                 await playbackCtx.close().catch(() => {});
                 playbackCtx = null;
             }
+            if (playbackUnlockCleanup) playbackUnlockCleanup();
+            playbackUnlockCleanup = null;
+            playbackBlockedNoticeShown = false;
             nextPlaybackTimes.clear();
             scheduledPlaybackSources.clear();
             clearInterval(recordingTimer);
@@ -1291,19 +1296,95 @@
             return leaveSession(currentRole === 'audience' ? 'audience' : 'home');
         }
 
-        function ensurePlaybackContext() {
-            if (!playbackCtx) playbackCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-            if (playbackCtx.state === 'suspended') playbackCtx.resume();
+        function installPlaybackUnlockFallback() {
+            if (playbackUnlockCleanup) return;
+            const unlock = () => {
+                if (!playbackCtx || playbackCtx.state === 'running') {
+                    playbackUnlockCleanup?.();
+                    return;
+                }
+                playbackCtx.resume().then(() => {
+                    playbackBlockedNoticeShown = false;
+                    playbackUnlockCleanup?.();
+                }).catch(() => {});
+            };
+            document.addEventListener('pointerdown', unlock, true);
+            document.addEventListener('keydown', unlock, true);
+            playbackUnlockCleanup = () => {
+                document.removeEventListener('pointerdown', unlock, true);
+                document.removeEventListener('keydown', unlock, true);
+                playbackUnlockCleanup = null;
+            };
+        }
+
+        function primePlaybackContext() {
+            if (!playbackCtx) {
+                playbackCtx = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 24000,
+                    latencyHint: 'interactive'
+                });
+            }
+            if (playbackCtx.state === 'suspended') {
+                // This function is called directly inside the audience's join
+                // gesture, before the first await. That preserves Chrome/iOS
+                // autoplay permission for audio that arrives later by websocket.
+                playbackCtx.resume().then(() => {
+                    playbackBlockedNoticeShown = false;
+                    playbackUnlockCleanup?.();
+                }).catch(() => installPlaybackUnlockFallback());
+            }
+            try {
+                const silence = playbackCtx.createBuffer(1, 1, playbackCtx.sampleRate);
+                const source = playbackCtx.createBufferSource();
+                source.buffer = silence;
+                source.connect(playbackCtx.destination);
+                source.start();
+            } catch (error) {}
             return playbackCtx;
+        }
+
+        function ensurePlaybackContext() {
+            const ctx = primePlaybackContext();
+            if (ctx.state !== 'running') installPlaybackUnlockFallback();
+            return ctx;
         }
 
         function playPcm16(base64Audio, sampleRate = 24000, sourceId = 'default') {
             if (!base64Audio) return;
-            const ctx = ensurePlaybackContext();
             const binary = atob(base64Audio);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            const pcm = new Int16Array(bytes.buffer);
+            playPcm16Bytes(bytes, sampleRate, sourceId);
+        }
+
+        function playRealtimePcmFrame(frame) {
+            if (!(frame instanceof ArrayBuffer) || frame.byteLength < 40) return;
+            const view = new DataView(frame);
+            if (
+                view.getUint8(0) !== 76
+                || view.getUint8(1) !== 86
+                || view.getUint8(2) !== 48
+                || view.getUint8(3) !== 49
+            ) return;
+            const sampleRate = view.getUint32(4, true);
+            const sourceId = new TextDecoder()
+                .decode(new Uint8Array(frame, 8, 32))
+                .replace(/\0+$/, '') || 'default';
+            playPcm16Bytes(new Uint8Array(frame, 40), sampleRate, sourceId);
+        }
+
+        function playPcm16Bytes(bytes, sampleRate = 24000, sourceId = 'default') {
+            if (!bytes?.byteLength) return;
+            const ctx = ensurePlaybackContext();
+            if (ctx.state !== 'running' && !playbackBlockedNoticeShown) {
+                playbackBlockedNoticeShown = true;
+                setStatus('offline', '소리를 재생하려면 화면을 한 번 눌러주세요.');
+            }
+            const pcm = new Int16Array(
+                bytes.buffer,
+                bytes.byteOffset,
+                Math.floor(bytes.byteLength / 2)
+            );
             const buffer = ctx.createBuffer(1, pcm.length, sampleRate);
             const channel = buffer.getChannelData(0);
             for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i] / 32768;
@@ -1332,10 +1413,16 @@
             } else if (nextTime < now) {
                 nextTime = now + PLAYBACK_START_LEAD_SECONDS;
             }
+            const queuedAhead = Math.max(0, nextTime - now);
+            const playbackRate = queuedAhead > 0.32
+                ? 1.05
+                : (queuedAhead > 0.18 ? 1.025 : 1);
+            source.playbackRate.value = playbackRate;
+            const effectiveDuration = buffer.duration / playbackRate;
             const scheduledItem = {
                 source,
                 startTime: nextTime,
-                endTime: nextTime + buffer.duration,
+                endTime: nextTime + effectiveDuration,
                 cancelled: false
             };
             scheduled.push(scheduledItem);
@@ -1347,7 +1434,7 @@
                 else scheduledPlaybackSources.delete(sourceId);
             };
             source.start(nextTime);
-            nextPlaybackTimes.set(sourceId, nextTime + buffer.duration);
+            nextPlaybackTimes.set(sourceId, nextTime + effectiveDuration);
         }
 
         async function startSpeaker() {
@@ -1487,6 +1574,10 @@
                 document.getElementById('audience_room_password').focus();
                 return;
             }
+            // AudioContext must be opened synchronously in this click/submit
+            // gesture. Waiting for room verification first loses autoplay
+            // permission on several browsers and makes live audio seem delayed.
+            primePlaybackContext();
             joinButton.disabled = true;
             joinButton.innerText = '방 확인 중…';
             try {
@@ -1497,7 +1588,6 @@
                 sessionStorage.setItem(`lovingvoice:room-password:${room}`, password);
                 isLeaving = false;
                 showActiveUI(false, room, password);
-                ensurePlaybackContext();
                 setStatus('offline', '방 비밀번호 확인 중…');
                 audienceConfig = { room, lang, password };
                 connectAudience();
@@ -1601,7 +1691,8 @@
             const { room, lang, password } = audienceConfig;
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws/audience/${encodeURIComponent(room)}/${encodeURIComponent(lang)}`);
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/audience/${encodeURIComponent(room)}/${encodeURIComponent(lang)}?transport=pcm16-v1`);
+            ws.binaryType = 'arraybuffer';
 
             const translations = new Map();
             const sourceTranscripts = new Map();
@@ -1752,6 +1843,10 @@
                 }, 20000);
             };
             ws.onmessage = async (event) => {
+                if (event.data instanceof ArrayBuffer) {
+                    playRealtimePcmFrame(event.data);
+                    return;
+                }
                 const data = JSON.parse(event.data);
 
                 if (data.type === 'history_snapshot') {
@@ -1777,8 +1872,12 @@
                     if (!sourceTranscripts.has(sourceId)) captionDisplay.startCaption();
                     const sourceText = (sourceTranscripts.get(sourceId) || '') + (data.text || '');
                     sourceTranscripts.set(sourceId, sourceText);
-                    if (lang === 'ko-KR') captionDisplay.updateCaption(sourceText);
-                    else if (!translations.size) captionDisplay.updateCaption('원문 인식 중…', { sourcePreview: true });
+                    // Source transcription can arrive before translated text.
+                    // Never show it as if it were the listener's selected-language
+                    // caption; the audible translation is already streaming.
+                    if (!translations.has(sourceId)) {
+                        captionDisplay.updateCaption('동시 통역 중…', { sourcePreview: true });
+                    }
                 } else if (data.type === 'transcript_done') {
                     const sourceId = data.source_id || 'default';
                     sourceTranscripts.delete(sourceId);
@@ -1801,14 +1900,8 @@
                 } else if (data.type === 'engine_error') {
                     setStatus('error', data.message || '통역 엔진 오류');
                 } else if (data.type === 'transcript') {
-                    if (lang !== 'ko-KR') {
-                        captionDisplay.startCaption();
-                        captionDisplay.updateCaption('원문 인식 중…', { sourcePreview: true });
-                    } else {
-                        captionDisplay.startCaption();
-                        captionDisplay.updateCaption(data.text, { sourcePreview: !data.is_final });
-                        if (data.is_final) captionDisplay.completeCaption(data.text);
-                    }
+                    captionDisplay.startCaption();
+                    captionDisplay.updateCaption('동시 통역 중…', { sourcePreview: true });
                 } else if (data.type === 'translation') {
                     captionDisplay.completeCaption(data.text);
                     
