@@ -3,9 +3,12 @@ from fastapi.responses import HTMLResponse, FileResponse
 import logging
 import os
 import asyncio
+import uuid
 from dotenv import load_dotenv
 from app.services.speech_engine import LovingVoiceEngine
 from app.services.connection import ConnectionManager
+from app.services.realtime_translation import RealtimeTranslationHub
+from app.services.room_auth import RoomTokenManager
 
 # .env 파일 로드
 load_dotenv()
@@ -16,9 +19,28 @@ logger = logging.getLogger("LovingVoice")
 
 app = FastAPI(title="LovingVoice API")
 
-# 엔진 및 매니저 초기화
-engine = LovingVoiceEngine()
+# OpenAI Realtime is the default path. Legacy Google/Gemini clients are created
+# lazily so the app can start with only OPENAI_API_KEY configured.
+legacy_engine = None
 manager = ConnectionManager()
+room_tokens = RoomTokenManager()
+realtime_hub = RealtimeTranslationHub(
+    manager.broadcast_json_to_room,
+    manager.broadcast_json_to_language,
+    manager.record_subtitle,
+)
+
+
+def get_legacy_engine():
+    global legacy_engine
+    if legacy_engine is None:
+        legacy_engine = LovingVoiceEngine()
+    return legacy_engine
+
+
+@app.on_event("shutdown")
+async def shutdown_realtime_hub():
+    await realtime_hub.close()
 
 @app.get("/")
 async def get_index():
@@ -32,39 +54,164 @@ async def get_index():
 async def get_worklet():
     return FileResponse("app/templates/audio-processor.js", media_type="application/javascript")
 
+
+@app.get("/app.css")
+async def get_app_styles():
+    return FileResponse("app/templates/tailwind.css", media_type="text/css")
+
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "realtime_available": realtime_hub.available,
+        "realtime_model": realtime_hub.model,
+        "realtime_mode": "max_performance",
+        "active_translation_sessions": realtime_hub.active_session_count,
+    }
+
+
+@app.get("/api/rooms/{room_id}")
+async def room_status(room_id: str):
+    status = manager.room_status(room_id)
+    status.update(
+        {
+            "translation_routes": realtime_hub.route_status(room_id),
+            "route_policy": "one_per_source_channel_and_language",
+        }
+    )
+    return status
+
+
+@app.post("/api/rooms")
+async def create_room():
+    """Create a shareable room and a short-lived, room-scoped host token."""
+    room_id = room_tokens.create_room_id()
+    while room_id in manager.active_speakers:
+        room_id = room_tokens.create_room_id()
+    return {
+        "room_id": room_id,
+        "speaker_token": room_tokens.issue(room_id),
+        "audience_path": f"/?room={room_id}",
+        "expires_in_seconds": room_tokens.ttl_seconds,
+    }
+
 import queue
 import threading
 
 @app.websocket("/ws/speaker/{room_id}")
 async def speaker_endpoint(websocket: WebSocket, room_id: str):
-    # 쿼리 파라미터에서 비밀번호 및 모드 추출
-    password = websocket.query_params.get("password")
+    # Engine preferences are harmless URL metadata. Credentials are deliberately
+    # received after connection so passwords/tokens never appear in access logs.
     voice_mode = websocket.query_params.get("voice_mode", "speed")
-    
-    # [인증 1] 비밀번호 검증
-    correct_pass = os.getenv("SPEAKER_PASSWORD", "loving77")
-    if password != correct_pass:
-        logger.warning(f"Speaker connection rejected: Invalid password for room {room_id}")
-        await websocket.accept() # 클라이언트에 에러를 보내기 위해 일단 수락
-        await websocket.close(code=4001, reason="Invalid speaker password")
-        return
-
-    # [인증 2] 입중 인원 제한 추가
-    if not await manager.add_speaker(room_id, websocket):
-        logger.warning(f"Speaker connection rejected: Room {room_id} is full.")
-        await websocket.accept()
-        await websocket.close(code=4002, reason="Speaker room is full (max 2)")
-        return
+    translation_engine = websocket.query_params.get("engine", "openai")
 
     await websocket.accept()
+    try:
+        auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=8)
+    except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
+        await websocket.close(code=4001, reason="Speaker authentication required")
+        return
+    if auth_message.get("type") != "authenticate" or not room_tokens.authenticate(
+        room_id, auth_message
+    ):
+        logger.warning("Speaker connection rejected for room %s", room_id)
+        await websocket.close(code=4001, reason="Invalid speaker credential")
+        return
+
+    await manager.add_speaker(room_id, websocket)
+    source_id = uuid.uuid4().hex
     manager.voice_modes = getattr(manager, 'voice_modes', {})
     manager.voice_modes[room_id] = voice_mode
     logger.info(f"Speaker connected to room: {room_id} (voice_mode={voice_mode})")
-    
+    await websocket.send_json({"type": "authenticated", "room_id": room_id})
+    await manager.broadcast_json_to_room(
+        room_id, {"type": "room_status", **manager.room_status(room_id)}
+    )
+
+    if translation_engine == "openai":
+        if not realtime_hub.available:
+            await websocket.send_json(
+                {
+                    "type": "engine_error",
+                    "message": "OPENAI_API_KEY가 설정되지 않았습니다.",
+                }
+            )
+            await websocket.close(code=4003, reason="OpenAI API key is missing")
+            manager.remove_speaker(room_id, websocket)
+            return
+
+        await websocket.send_json(
+            {
+                "type": "engine_status",
+                "state": "online",
+                "message": f"{realtime_hub.model} 준비 완료",
+            }
+        )
+        try:
+            while True:
+                data = await websocket.receive()
+                if data.get("type") == "websocket.disconnect":
+                    break
+                if data.get("bytes") is not None:
+                    languages = manager.audience_languages(room_id)
+                    if languages:
+                        await realtime_hub.feed(
+                            room_id, source_id, data["bytes"], languages
+                        )
+                elif data.get("text"):
+                    try:
+                        import json
+
+                        message = json.loads(data["text"])
+                        if message.get("type") == "test_audio":
+                            test_text = "🔔 LovingVoice 실시간 연결 테스트가 완료되었습니다."
+                            for language in manager.audience_languages(room_id):
+                                caption = await manager.record_subtitle(
+                                    room_id, language, source_id, test_text
+                                )
+                                await manager.broadcast_json_to_language(
+                                    room_id,
+                                    language,
+                                    {
+                                        "type": "translation_delta",
+                                        "text": test_text,
+                                        "source_id": source_id,
+                                    },
+                                )
+                                await manager.broadcast_json_to_language(
+                                    room_id,
+                                    language,
+                                    {
+                                        "type": "translation_done",
+                                        "source_id": source_id,
+                                        "caption": caption,
+                                    },
+                                )
+                    except ValueError:
+                        logger.warning("Invalid speaker control message in room %s", room_id)
+        except WebSocketDisconnect:
+            logger.info("Realtime speaker disconnected from room: %s", room_id)
+        except Exception as exc:
+            logger.exception("Realtime speaker error in room %s", room_id)
+            if websocket.client_state.name == "CONNECTED":
+                await websocket.send_json(
+                    {"type": "engine_error", "message": str(exc)}
+                )
+        finally:
+            manager.remove_speaker(room_id, websocket)
+            await realtime_hub.close_speaker(room_id, source_id)
+            await manager.broadcast_json_to_room(
+                room_id, {"type": "room_status", **manager.room_status(room_id)}
+            )
+        return
+
+    engine = get_legacy_engine()
+
     # 오디오 데이터를 담을 비동기 큐
     audio_queue = asyncio.Queue()
     loop = asyncio.get_running_loop()  # [P2 수정] get_event_loop() deprecated → get_running_loop()
-    
+
     def audio_generator():
         """비동기 큐에서 데이터를 가져와 gRPC 스트림으로 전달하는 브릿지"""
         while True:
@@ -104,15 +251,15 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
                     transcript = result["transcript"].strip()
                     if not transcript or len(transcript) < 2: continue
                     last_transcript = transcript
-                    
+
                     is_final = result["is_final"]
-                    
+
                     # 실시간 자막 발송 (청중 반응성)
                     msg = {"type": "transcript", "text": transcript, "is_final": is_final}
                     if websocket.client_state.name == "CONNECTED":
                         await websocket.send_json(msg)
                     await manager.broadcast_json_to_room(room_id, msg)
-                    
+
                     if is_final:
                         logger.info(f"[{room_id}] Final Recognized: {transcript}")
                         try:
@@ -122,11 +269,11 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
                             logger.error(f"[{room_id}] Broadcast failed in main loop: {e}")
                         # 구글 API가 정상적으로 문장 완성을 주더라도, 깔끔함을 위해 스트림 갱신
                         break
-                
+
                 # 정상 종료 시 (예: Google 5분 제한) 즉시 재시작 루프로 진입
                 logger.info(f"[{room_id}] STT Stream timeout/closed. Restarting phoenix system...")
                 await asyncio.sleep(0.1)
-                
+
             except Exception as e:
                 logger.error(f"[{room_id}] STT Phoenix error: {e}. Recovering in 1s...")
                 await asyncio.sleep(1)
@@ -173,12 +320,32 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
             await stt_task
         except asyncio.CancelledError:
             pass
-        await audio_queue.put(None) 
+        await audio_queue.put(None)
         logger.info(f"[{room_id}] Speaker cleanup complete.")
 
 @app.websocket("/ws/audience/{room_id}/{lang}")
 async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
     await manager.add_audience(room_id, lang, websocket)
+    await websocket.send_json(
+        {
+            "type": "history_snapshot",
+            "language": lang,
+            "items": manager.get_subtitle_history(room_id, lang),
+            "policy": {
+                "max_items": manager.history_limit,
+                "max_age_seconds": manager.history_max_age_seconds,
+                "max_bytes": manager.history_max_bytes,
+            },
+        }
+    )
+    await manager.broadcast_json_to_room(
+        room_id,
+        {
+            "type": "room_status",
+            **manager.room_status(room_id),
+            "shared_route": True,
+        },
+    )
     logger.info(f"Audience connected to room: {room_id}, lang: {lang}")
     try:
         while True:
@@ -187,6 +354,12 @@ async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
     except WebSocketDisconnect:
         logger.info(f"Audience disconnected from room: {room_id}, lang: {lang}")
         manager.remove_audience(room_id, lang, websocket)
+        await manager.broadcast_json_to_room(
+            room_id, {"type": "room_status", **manager.room_status(room_id)}
+        )
     except Exception as e:
         logger.error(f"Audience error in room {room_id}: {e}")
-        manager.remove_audience(room_id, lang, websocket)
+        manager.remove_audience(room_id, lang, websocket)
+        await manager.broadcast_json_to_room(
+            room_id, {"type": "room_status", **manager.room_status(room_id)}
+        )

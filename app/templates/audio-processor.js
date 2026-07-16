@@ -5,7 +5,8 @@
 class RecorderProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.bufferSize = 4096;
+    // 480 samples at 24 kHz = 20 ms for broadcast-grade Realtime latency.
+    this.bufferSize = 480;
     this.buffer = new Int16Array(this.bufferSize);
     this.bufferIndex = 0;
   }

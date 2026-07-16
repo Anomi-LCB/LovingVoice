@@ -5,3 +5,5 @@ google-cloud-texttospeech
 google-genai
 websockets
 python-dotenv
+pytest
+pytest-asyncio
