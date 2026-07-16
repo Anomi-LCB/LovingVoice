@@ -23,6 +23,14 @@ class FakeAudience:
         self.messages.append(message)
 
 
+def test_default_subtitle_history_keeps_twenty_completed_captions(monkeypatch):
+    monkeypatch.delenv("SUBTITLE_HISTORY_LIMIT", raising=False)
+
+    manager = ConnectionManager()
+
+    assert manager.history_limit == 20
+
+
 @pytest.mark.asyncio
 async def test_speaker_connections_are_not_artificially_limited():
     manager = ConnectionManager()

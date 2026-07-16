@@ -17,7 +17,7 @@ class ConnectionManager:
         # A live room keeps its original internal channel when its public name
         # changes. New public names resolve to that same channel.
         self.room_aliases = {}
-        self.history_limit = max(1, int(os.getenv("SUBTITLE_HISTORY_LIMIT", "30")))
+        self.history_limit = max(1, int(os.getenv("SUBTITLE_HISTORY_LIMIT", "20")))
         self.history_max_age_seconds = max(
             30, int(os.getenv("SUBTITLE_HISTORY_MAX_AGE_SECONDS", "300"))
         )

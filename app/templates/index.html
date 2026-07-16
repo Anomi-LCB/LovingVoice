@@ -138,6 +138,13 @@
         .session-action:hover { border-color: #93c5fd; }
         .caption-stage { height: min(62vh, 580px); min-height: 420px; margin-top: 18px; padding: 18px; border-radius: 24px; }
         .caption-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px 14px; color: #64748b; font-size: .78rem; }
+        .caption-meta-actions { display: flex; align-items: center; gap: 8px; }
+        .history-jump.hidden { display: none; }
+        .history-caption { animation: caption-rise .32s cubic-bezier(.22, 1, .36, 1) both; }
+        @keyframes caption-rise {
+            from { opacity: 0; transform: translateY(14px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
         .host-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; padding: 16px; border-radius: 18px; }
         .host-controls.hidden { display: none; }
         .control-button { min-height: 44px; padding: 0 16px; border-radius: 11px; background: #e2e8f0; color: #243047; font-weight: 780; }
@@ -166,6 +173,9 @@
         html[data-theme="dark"] .support-list, html[data-theme="dark"] .invite-item { border-color: #334155; }
         html[data-theme="dark"] .modal-card { background: #1e293b; color: #f8fafc; }
         html[data-theme="dark"] .invite-text { border-color: #475569; }
+        @media (prefers-reduced-motion: reduce) {
+            .history-caption { animation: none; }
+        }
         @media (max-width: 760px) {
             .app-shell { padding: 76px 16px 24px; }
             .role-screen { min-height: calc(100vh - 100px); align-items: start; padding-top: 38px; }
@@ -321,10 +331,13 @@
 
             <div class="glass caption-stage flex flex-col w-full text-left overflow-hidden">
                 <div class="caption-meta">
-                    <span id="recent_history_label">최근 5분 자막</span>
-                    <span id="route_badge" class="session-chip">공유 언어 채널</span>
+                    <span id="recent_history_label">최근 5분 · 최대 20개</span>
+                    <div class="caption-meta-actions">
+                        <button id="history_jump_button" type="button" onclick="scrollToLatestCaption()" class="session-action history-jump hidden">최신 자막</button>
+                        <span id="route_badge" class="session-chip">공유 언어 채널</span>
+                    </div>
                 </div>
-                <div id="history_area" aria-live="polite" class="flex-1 overflow-y-auto space-y-3 pb-4 opacity-70 text-xl md:text-2xl font-medium px-4 scroll-smooth"></div>
+                <div id="history_area" tabindex="0" aria-live="polite" aria-label="완료된 최근 자막입니다. 위아래로 스크롤할 수 있습니다." class="flex-1 overflow-y-auto space-y-3 pb-4 opacity-70 text-xl md:text-2xl font-medium px-4 scroll-smooth"></div>
                 <div id="subtitle_area" aria-live="assertive" class="text-2xl md:text-4xl font-bold leading-tight break-keep pt-4 border-t border-slate-700 px-4 min-h-[80px] text-blue-100">
                     강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.
                 </div>
@@ -416,6 +429,7 @@
         let downloadRecordingOnStop = false;
         let recordingSaved = false;
         const COMPLETED_CAPTION_HOLD_MS = 2200;
+        const AUDIENCE_HISTORY_MAX_ITEMS = 20;
 
         function applyTheme(theme, { persist = true } = {}) {
             const nextTheme = theme === 'dark' ? 'dark' : 'light';
@@ -545,8 +559,23 @@
             document.getElementById('subtitle_area').innerText = isSpeaker
                 ? '강연을 시작하면 청중에게 실시간 통역이 전송됩니다.'
                 : '강연자의 다음 실시간 통역을 기다리는 중…';
+            document.getElementById('recent_history_label').innerText = isSpeaker
+                ? '완료된 강연 자막'
+                : `최근 5분 · 최대 ${AUDIENCE_HISTORY_MAX_ITEMS}개`;
             document.getElementById('route_badge').innerText = isSpeaker ? '언어별 공유 전송' : '공유 언어 채널';
+            const historyBox = document.getElementById('history_area');
+            historyBox.onscroll = null;
+            delete historyBox.dataset.followLatest;
+            document.getElementById('history_jump_button').classList.add('hidden');
             if (isSpeaker) initializeSpeakerCaptions();
+        }
+
+        function scrollToLatestCaption({ behavior = 'smooth' } = {}) {
+            const historyBox = document.getElementById('history_area');
+            if (!historyBox) return;
+            historyBox.dataset.followLatest = 'true';
+            document.getElementById('history_jump_button')?.classList.add('hidden');
+            historyBox.scrollTo({ top: historyBox.scrollHeight, behavior });
         }
 
         function cleanRoomId(value) {
@@ -900,7 +929,11 @@
             document.getElementById('mute_button').innerText = '마이크 음소거';
             document.getElementById('active_ui').classList.add('hidden');
             document.getElementById('speaker_controls').classList.add('hidden');
-            document.getElementById('history_area').replaceChildren();
+            const historyBox = document.getElementById('history_area');
+            historyBox.onscroll = null;
+            delete historyBox.dataset.followLatest;
+            historyBox.replaceChildren();
+            document.getElementById('history_jump_button').classList.add('hidden');
             document.getElementById('subtitle_area').innerText = '강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.';
             audienceConfig = null;
             currentRoomPassword = '';
@@ -1198,8 +1231,9 @@
             const sourceTranscripts = new Map();
             const area = document.getElementById('subtitle_area');
             const historyBox = document.getElementById('history_area');
+            const historyJumpButton = document.getElementById('history_jump_button');
             const historyKey = `lovingvoice:subtitles:${room}:${lang}`;
-            let recentHistoryLimit = 30;
+            let recentHistoryLimit = AUDIENCE_HISTORY_MAX_ITEMS;
             let recentHistoryMaxAgeMs = 5 * 60 * 1000;
             const seenCaptionIds = new Set(
                 [...historyBox.querySelectorAll('[data-caption-id]')]
@@ -1213,18 +1247,45 @@
                 return Number.isFinite(createdAt) && createdAt >= Date.now() - recentHistoryMaxAgeMs;
             }
 
+            function isNearHistoryBottom() {
+                return historyBox.scrollHeight - historyBox.scrollTop - historyBox.clientHeight <= 72;
+            }
+
+            function updateHistoryScrollState() {
+                if (currentRole !== 'audience') return;
+                if (historyBox.dataset.followLatest === 'true') {
+                    historyJumpButton.classList.add('hidden');
+                    if (isNearHistoryBottom()) delete historyBox.dataset.followLatest;
+                    return;
+                }
+                historyJumpButton.classList.toggle('hidden', isNearHistoryBottom());
+            }
+
+            historyBox.onscroll = updateHistoryScrollState;
+
             function trimRecentHistory() {
                 const cutoff = Date.now() - recentHistoryMaxAgeMs;
+                const keepReadingPosition = !isNearHistoryBottom();
+                let removedHeight = 0;
                 [...historyBox.children].forEach(element => {
                     const createdAt = Date.parse(element.dataset.createdAt || '');
-                    if (Number.isFinite(createdAt) && createdAt < cutoff) element.remove();
+                    if (Number.isFinite(createdAt) && createdAt < cutoff) {
+                        removedHeight += element.offsetHeight + 12;
+                        element.remove();
+                    }
                 });
                 while (historyBox.childElementCount > recentHistoryLimit) {
-                    historyBox.firstElementChild?.remove();
+                    const oldestCaption = historyBox.firstElementChild;
+                    if (!oldestCaption) break;
+                    removedHeight += oldestCaption.offsetHeight + 12;
+                    oldestCaption.remove();
+                }
+                if (keepReadingPosition && removedHeight) {
+                    historyBox.scrollTop = Math.max(0, historyBox.scrollTop - removedHeight);
                 }
             }
 
-            function renderHistoryItem(item) {
+            function renderHistoryItem(item, { animate = true, followLatest = true } = {}) {
                 if (!isRecentHistoryItem(item)) return;
                 const text = item.text;
                 const captionId = item.id || '';
@@ -1232,23 +1293,34 @@
                 if (captionId && seenCaptionIds.has(captionId)) return;
                 const p = document.createElement('p');
                 p.className = 'border-l-2 border-slate-600 pl-3';
+                if (animate) p.classList.add('history-caption');
                 p.innerText = text;
                 if (captionId) {
                     p.dataset.captionId = captionId;
                     seenCaptionIds.add(captionId);
                 }
                 p.dataset.createdAt = item.created_at;
+                const shouldFollowLatest = followLatest && isNearHistoryBottom();
                 historyBox.appendChild(p);
                 trimRecentHistory();
-                historyBox.scrollTop = historyBox.scrollHeight;
+                if (shouldFollowLatest) {
+                    requestAnimationFrame(() => scrollToLatestCaption({ behavior: animate ? 'smooth' : 'auto' }));
+                } else {
+                    updateHistoryScrollState();
+                }
             }
 
             if (historyBox.dataset.historyKey !== historyKey) {
                 historyBox.replaceChildren();
+                seenCaptionIds.clear();
                 historyBox.dataset.historyKey = historyKey;
                 try {
                     const savedHistory = JSON.parse(sessionStorage.getItem(historyKey) || '[]');
-                    savedHistory.filter(isRecentHistoryItem).slice(-recentHistoryLimit).forEach(renderHistoryItem);
+                    savedHistory
+                        .filter(isRecentHistoryItem)
+                        .slice(-recentHistoryLimit)
+                        .forEach(item => renderHistoryItem(item, { animate: false, followLatest: false }));
+                    requestAnimationFrame(() => scrollToLatestCaption({ behavior: 'auto' }));
                 } catch (error) {
                     console.warn('Subtitle history restore failed', error);
                 }
@@ -1291,12 +1363,16 @@
                 const data = JSON.parse(event.data);
 
                 if (data.type === 'history_snapshot') {
-                    recentHistoryLimit = Math.max(1, Number(data.policy?.max_items) || 30);
+                    recentHistoryLimit = Math.min(
+                        AUDIENCE_HISTORY_MAX_ITEMS,
+                        Math.max(1, Number(data.policy?.max_items) || AUDIENCE_HISTORY_MAX_ITEMS)
+                    );
                     recentHistoryMaxAgeMs = Math.max(30000, (Number(data.policy?.max_age_seconds) || 300) * 1000);
                     const recentMinutes = Math.max(1, Math.round(recentHistoryMaxAgeMs / 60000));
-                    document.getElementById('recent_history_label').innerText = `최근 ${recentMinutes}분 자막`;
-                    (data.items || []).forEach(renderHistoryItem);
+                    document.getElementById('recent_history_label').innerText = `최근 ${recentMinutes}분 · 최대 ${recentHistoryLimit}개`;
+                    (data.items || []).forEach(item => renderHistoryItem(item, { animate: false, followLatest: false }));
                     trimRecentHistory();
+                    requestAnimationFrame(() => scrollToLatestCaption({ behavior: 'auto' }));
                 } else if (data.type === 'room_status') {
                     const languageAudience = (data.audience_by_language || {})[lang] || 0;
                     document.getElementById('route_badge').innerText = `${lang} 공유 채널 · ${languageAudience}명`;
