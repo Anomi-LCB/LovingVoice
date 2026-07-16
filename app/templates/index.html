@@ -122,6 +122,7 @@
         let recordingStopResolver = null;
         let downloadRecordingOnStop = false;
         let recordingSaved = false;
+        const COMPLETED_CAPTION_HOLD_MS = 2200;
 
         function setStatus(state, text) {
             const dot = document.getElementById('status_dot');
@@ -479,6 +480,93 @@
             connectAudience();
         }
 
+        function createCaptionDisplayController(area, onPromote, holdMs = COMPLETED_CAPTION_HOLD_MS) {
+            let sequence = 0;
+            let activeKey = '';
+            let pendingPromotion = null;
+
+            function showWaitingState() {
+                area.innerText = '다음 실시간 통역을 기다리는 중…';
+                area.classList.add('italic', 'text-blue-300');
+                area.dataset.captionState = 'waiting';
+                area.dataset.captionKey = '';
+            }
+
+            function promotePendingCaption() {
+                if (!pendingPromotion) return;
+                const completed = pendingPromotion;
+                clearTimeout(completed.timer);
+                pendingPromotion = null;
+                onPromote(completed.text, completed.caption);
+                if (area.dataset.captionKey === completed.key) showWaitingState();
+                if (activeKey === completed.key) activeKey = '';
+            }
+
+            function startCaption() {
+                // A new sentence always owns the lower panel. If the previous
+                // sentence is still in its reading pause, move it up now.
+                promotePendingCaption();
+                activeKey = `caption-${Date.now()}-${++sequence}`;
+                area.dataset.captionKey = activeKey;
+                area.dataset.captionState = 'live';
+                area.classList.remove('italic', 'text-blue-300');
+            }
+
+            function updateCaption(text, { sourcePreview = false } = {}) {
+                if (!text) return;
+                if (!activeKey) startCaption();
+                area.innerText = text;
+                area.dataset.captionState = 'live';
+                area.classList.toggle('italic', sourcePreview);
+                area.classList.toggle('text-blue-300', sourcePreview);
+            }
+
+            function completeCaption(text, caption = null) {
+                if (!text) return;
+                if (
+                    pendingPromotion
+                    && pendingPromotion.text === text
+                    && (
+                        !caption?.id
+                        || !pendingPromotion.caption?.id
+                        || caption.id === pendingPromotion.caption.id
+                    )
+                ) {
+                    if (caption) pendingPromotion.caption = caption;
+                    return;
+                }
+                if (pendingPromotion) promotePendingCaption();
+                if (!activeKey) startCaption();
+                area.innerText = text;
+                area.classList.remove('italic', 'text-blue-300');
+                area.dataset.captionState = 'completed';
+                area.dataset.captionKey = activeKey;
+                pendingPromotion = {
+                    key: activeKey,
+                    text,
+                    caption,
+                    timer: setTimeout(promotePendingCaption, holdMs)
+                };
+            }
+
+            function dispose({ promote = false } = {}) {
+                if (!pendingPromotion) return;
+                if (promote) promotePendingCaption();
+                else {
+                    clearTimeout(pendingPromotion.timer);
+                    pendingPromotion = null;
+                }
+            }
+
+            return {
+                startCaption,
+                updateCaption,
+                completeCaption,
+                promotePendingCaption,
+                dispose
+            };
+        }
+
         function connectAudience() {
             if (!audienceConfig || isLeaving) return;
             const { room, lang, password } = audienceConfig;
@@ -566,6 +654,11 @@
                 }
             }
 
+            const captionDisplay = createCaptionDisplayController(
+                area,
+                pushToHistory
+            );
+
             ws.onopen = () => {
                 setStatus('offline', '방 비밀번호 확인 중...');
                 ws.send(JSON.stringify({ type: 'authenticate', password }));
@@ -594,29 +687,26 @@
                     }
                 } else if (data.type === 'transcript_delta') {
                     const sourceId = data.source_id || 'default';
+                    if (!sourceTranscripts.has(sourceId)) captionDisplay.startCaption();
                     const sourceText = (sourceTranscripts.get(sourceId) || '') + (data.text || '');
                     sourceTranscripts.set(sourceId, sourceText);
-                    if (lang === 'ko-KR') area.innerText = sourceText;
-                    else if (!translations.size) area.innerText = '🗣️ 원문 인식 중…';
+                    if (lang === 'ko-KR') captionDisplay.updateCaption(sourceText);
+                    else if (!translations.size) captionDisplay.updateCaption('원문 인식 중…', { sourcePreview: true });
                 } else if (data.type === 'transcript_done') {
                     const sourceId = data.source_id || 'default';
                     sourceTranscripts.delete(sourceId);
                 } else if (data.type === 'translation_delta') {
                     const sourceId = data.source_id || 'default';
+                    if (!translations.has(sourceId)) captionDisplay.startCaption();
                     const translatedText = (translations.get(sourceId) || '') + (data.text || '');
                     translations.set(sourceId, translatedText);
-                    area.innerText = translatedText;
-                    area.classList.remove('italic', 'text-blue-300');
+                    captionDisplay.updateCaption(translatedText);
                 } else if (data.type === 'translation_done') {
                     const sourceId = data.source_id || 'default';
                     const translatedText = translations.get(sourceId) || '';
                     const completedText = data.caption?.text || translatedText;
-                    if (completedText) pushToHistory(completedText, data.caption);
+                    if (completedText) captionDisplay.completeCaption(completedText, data.caption);
                     translations.delete(sourceId);
-                    if (!translations.size) {
-                        area.innerText = '다음 실시간 통역을 기다리는 중…';
-                        area.classList.add('italic', 'text-blue-300');
-                    }
                 } else if (data.type === 'audio_delta') {
                     playPcm16(data.audio, data.sample_rate || 24000, data.source_id || 'default');
                 } else if (data.type === 'engine_status') {
@@ -625,16 +715,15 @@
                     setStatus('error', data.message || '통역 엔진 오류');
                 } else if (data.type === 'transcript') {
                     if (lang !== 'ko-KR') {
-                        area.innerText = "🗣️ ... (Speaking) ...";
-                        area.classList.add('italic', 'text-blue-300');
+                        captionDisplay.startCaption();
+                        captionDisplay.updateCaption('원문 인식 중…', { sourcePreview: true });
                     } else {
-                        area.innerText = data.text;
-                        area.classList.remove('italic', 'text-blue-300');
-                        if (!data.is_final) area.classList.add('italic', 'text-blue-300');
+                        captionDisplay.startCaption();
+                        captionDisplay.updateCaption(data.text, { sourcePreview: !data.is_final });
+                        if (data.is_final) captionDisplay.completeCaption(data.text);
                     }
                 } else if (data.type === 'translation') {
-                    area.innerText = data.text;
-                    area.classList.remove('italic', 'text-blue-300');
+                    captionDisplay.completeCaption(data.text);
                     
                     // Phase 1에서는 audio가 빈 문자열로 옴 (자막만 먼저 도착)
                     if (data.audio) {
@@ -656,6 +745,7 @@
                 }
             };
             ws.onclose = event => {
+                captionDisplay.dispose({ promote: !isLeaving });
                 clearInterval(heartbeatTimer);
                 if (isLeaving || !audienceConfig) return;
                 if (event.code === 4001) {
