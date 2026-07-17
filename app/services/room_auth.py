@@ -16,7 +16,7 @@ class RoomTokenManager:
         configured_secret = secret or os.getenv("ROOM_SIGNING_SECRET")
         self.secret = (configured_secret or secrets.token_urlsafe(32)).encode()
         self.ttl_seconds = ttl_seconds
-        self.rooms: dict[str, dict[str, bytes | int]] = {}
+        self.rooms: dict[str, dict[str, bytes | int | bool]] = {}
 
     def create_room(self, room_id: str, password: str) -> dict[str, str | int]:
         """Register a user-named room and retain only its password digest."""
@@ -31,6 +31,7 @@ class RoomTokenManager:
         self.rooms[room_id] = {
             "salt": salt,
             "password_digest": password_digest,
+            "password_required": bool(password),
             "expires_at": expires_at,
         }
         return {
@@ -58,6 +59,7 @@ class RoomTokenManager:
         updated_room = {
             "salt": salt,
             "password_digest": password_digest,
+            "password_required": bool(new_password),
             "expires_at": expires_at,
         }
         if new_room_id != room_id:
@@ -114,7 +116,7 @@ class RoomTokenManager:
     def verify_room_password(self, room_id: str, password: str) -> bool:
         self._prune_expired_rooms()
         room = self.rooms.get(room_id)
-        if not room or not password:
+        if not room:
             return False
         supplied_digest = hashlib.pbkdf2_hmac(
             "sha256",
@@ -123,6 +125,11 @@ class RoomTokenManager:
             200_000,
         )
         return hmac.compare_digest(supplied_digest, room["password_digest"])
+
+    def room_requires_password(self, room_id: str) -> bool:
+        self._prune_expired_rooms()
+        room = self.rooms.get(room_id)
+        return bool(room and room.get("password_required", True))
 
     def room_exists(self, room_id: str) -> bool:
         self._prune_expired_rooms()

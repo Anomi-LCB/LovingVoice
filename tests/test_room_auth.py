@@ -25,6 +25,7 @@ def test_room_creation_uses_custom_name_and_separate_credentials():
     assert room["room_id"] == "주일예배"
     assert manager.verify_speaker_token(room["room_id"], room["speaker_token"])
     assert manager.verify_room_password(room["room_id"], "My-Secret")
+    assert manager.room_requires_password(room["room_id"])
     assert not manager.verify_room_password(room["room_id"], "my-secret")
     assert not manager.verify_room_password(room["room_id"], "WRONG123")
     assert not manager.verify_speaker_token("000000", room["speaker_token"])
@@ -34,6 +35,16 @@ def test_room_creation_uses_custom_name_and_separate_credentials():
 
     with pytest.raises(ValueError):
         manager.create_room("주일예배", "Another-Secret")
+
+
+def test_passwordless_room_accepts_only_an_empty_password():
+    manager = RoomTokenManager(secret="token-secret")
+    room = manager.create_room("열린강연", "")
+
+    assert not manager.room_requires_password(room["room_id"])
+    assert manager.verify_room_password(room["room_id"], "")
+    assert manager.verify_room_password(room["room_id"], "   ")
+    assert not manager.verify_room_password(room["room_id"], "anything")
 
 
 def test_expired_room_rejects_both_host_and_audience():
@@ -57,6 +68,11 @@ def test_room_name_and_password_can_be_updated_by_host_flow():
     assert manager.verify_speaker_token("새로운방", updated["speaker_token"])
     assert not manager.verify_room_password("새로운방", "Old-Secret")
     assert manager.verify_room_password("새로운방", "New-Secret")
+
+    passwordless = manager.update_room("새로운방", "공개강연", "")
+    assert passwordless["room_id"] == "공개강연"
+    assert not manager.room_requires_password("공개강연")
+    assert manager.verify_room_password("공개강연", "")
 
 
 def test_room_update_rejects_an_existing_new_name():

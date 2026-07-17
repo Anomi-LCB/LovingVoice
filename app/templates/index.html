@@ -103,6 +103,7 @@
         .form-copy { margin: 10px 0 28px; color: #64748b; line-height: 1.6; }
         .field-group { margin-top: 20px; }
         .field-label { display: block; margin-bottom: 8px; font-size: .92rem; font-weight: 750; }
+        .field-optional { margin-left: 4px; color: #64748b; font-size: .76rem; font-weight: 600; }
         .field-help { margin: 8px 0 0; color: #64748b; font-size: .78rem; line-height: 1.5; }
         .form-control { display: block; width: 100%; max-width: 100%; min-width: 0; min-height: 48px; padding: 0 14px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #172033; outline: none; transition: border-color 160ms ease, box-shadow 160ms ease; }
         .form-control:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.16); }
@@ -252,7 +253,7 @@
                     <button type="button" class="role-card" onclick="openRoleScreen('host')">
                         <span class="role-index">01</span>
                         <span class="role-title">강연 시작</span>
-                        <span class="role-description">방 이름과 비밀번호를 정하고 마이크를 준비한 뒤 방송을 시작합니다.</span>
+                        <span class="role-description">방 이름과 선택 사항인 비밀번호를 정하고 마이크를 준비한 뒤 방송을 시작합니다.</span>
                         <span class="role-action">강연 준비하기</span>
                     </button>
                     <button type="button" class="role-card" onclick="openRoleScreen('audience')">
@@ -276,16 +277,16 @@
                     <p class="form-copy">청중에게 공유할 방 정보만 정하면 바로 시작할 수 있습니다.</p>
                     <div class="field-group">
                         <label class="field-label" for="host_room_id">방 이름</label>
-                        <input id="host_room_id" class="form-control" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="예: 주일예배">
-                        <p class="field-help">문자·숫자·하이픈을 사용할 수 있으며 공백은 하이픈으로 바뀝니다.</p>
+                        <input id="host_room_id" class="form-control" type="text" minlength="3" maxlength="40" autocomplete="off" spellcheck="false" placeholder="예: 주일예배">
+                        <p class="field-help">3~40자의 문자·숫자·하이픈을 사용할 수 있으며 공백은 하이픈으로 바뀝니다.</p>
                     </div>
                     <div class="field-group">
-                        <label class="field-label" for="host_room_password">청중 입장 비밀번호</label>
+                        <label class="field-label" for="host_room_password">방 비밀번호 <span class="field-optional">선택</span></label>
                         <div class="password-field">
-                            <input id="host_room_password" class="form-control" type="password" minlength="4" maxlength="32" autocomplete="new-password" autocapitalize="none" spellcheck="false" placeholder="4~32자로 직접 입력">
+                            <input id="host_room_password" class="form-control" type="password" minlength="4" autocomplete="new-password" autocapitalize="none" spellcheck="false" placeholder="비워두거나 4자 이상 입력">
                             <button type="button" class="password-toggle" onclick="togglePassword('host_room_password', this)">보기</button>
                         </div>
-                        <p class="field-help">강연자용 별도 비밀번호는 없습니다. 이 비밀번호는 청중 입장에만 사용됩니다.</p>
+                        <p class="field-help">비워두면 비밀번호 없는 방으로 만들어집니다.</p>
                     </div>
                     <p id="host_form_error" class="form-error" role="alert"></p>
                     <div class="button-row">
@@ -318,16 +319,16 @@
             </header>
             <form class="glass form-card audience-card" onsubmit="event.preventDefault(); startAudience();">
                 <h2 class="form-title">청중 입장</h2>
-                <p id="audience_intro" class="form-copy">강연자에게 받은 방 이름과 비밀번호를 입력하세요.</p>
+                <p id="audience_intro" class="form-copy">방 이름을 입력하고, 비밀번호가 있는 방이면 함께 입력하세요.</p>
                 <div class="audience-form-fields">
                     <div class="field-group">
                         <label class="field-label" for="audience_room_id">방 이름</label>
-                        <input id="audience_room_id" class="form-control" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="초대받은 방 이름">
+                        <input id="audience_room_id" class="form-control" type="text" minlength="3" maxlength="40" autocomplete="off" spellcheck="false" placeholder="초대받은 방 이름">
                     </div>
                     <div class="field-group">
-                        <label class="field-label" for="audience_room_password">방 비밀번호</label>
+                        <label class="field-label" for="audience_room_password">방 비밀번호 <span class="field-optional">선택</span></label>
                         <div class="password-field">
-                            <input id="audience_room_password" class="form-control" type="password" maxlength="32" autocomplete="current-password" autocapitalize="none" spellcheck="false" placeholder="강연자에게 받은 비밀번호">
+                            <input id="audience_room_password" class="form-control" type="password" minlength="4" autocomplete="current-password" autocapitalize="none" spellcheck="false" placeholder="비밀번호가 없으면 비워두세요">
                             <button type="button" class="password-toggle" onclick="togglePassword('audience_room_password', this)">보기</button>
                         </div>
                     </div>
@@ -422,7 +423,7 @@
                     <div id="invite_qr" class="invite-qr" role="img" aria-label="청중 입장 QR 코드">
                         <span id="invite_qr_error" class="invite-qr-error hidden">QR을 생성할 수 없습니다.</span>
                     </div>
-                    <p class="invite-qr-note">스캔하면 방 이름과 비밀번호가 자동으로 입력됩니다.</p>
+                    <p class="invite-qr-note">스캔하면 필요한 방 정보가 자동으로 입력됩니다.</p>
                     <button type="button" class="secondary-button" onclick="downloadInviteQr()">QR 이미지 저장</button>
                 </div>
                 <div>
@@ -451,17 +452,18 @@
             <button type="button" class="modal-close" onclick="closeRoomSettings()" aria-label="방 설정 닫기">×</button>
             <span class="step-label">방송을 유지한 채 변경</span>
             <h2 id="room_settings_title" class="form-title mt-2">방 설정</h2>
-            <p class="form-copy">변경 후 새 청중은 새 방 이름과 비밀번호로 입장합니다.</p>
+            <p class="form-copy">변경 후 새 청중은 새 방 이름과 선택한 방 비밀번호로 입장합니다.</p>
             <div class="field-group">
                 <label class="field-label" for="room_settings_name">방 이름</label>
-                <input id="room_settings_name" class="form-control" type="text" maxlength="40" autocomplete="off" spellcheck="false">
+                <input id="room_settings_name" class="form-control" type="text" minlength="3" maxlength="40" autocomplete="off" spellcheck="false">
             </div>
             <div class="field-group">
-                <label class="field-label" for="room_settings_password">청중 입장 비밀번호</label>
+                <label class="field-label" for="room_settings_password">방 비밀번호 <span class="field-optional">선택</span></label>
                 <div class="password-field">
-                    <input id="room_settings_password" class="form-control" type="password" minlength="4" maxlength="32" autocomplete="new-password" autocapitalize="none" spellcheck="false">
+                    <input id="room_settings_password" class="form-control" type="password" minlength="4" autocomplete="new-password" autocapitalize="none" spellcheck="false" placeholder="비워두거나 4자 이상 입력">
                     <button type="button" class="password-toggle" onclick="togglePassword('room_settings_password', this)">보기</button>
                 </div>
+                <p class="field-help">비워서 저장하면 비밀번호 없는 방으로 변경됩니다.</p>
             </div>
             <p id="room_settings_error" class="form-error" role="alert"></p>
             <p id="room_settings_status" class="copy-status" role="status"></p>
@@ -577,7 +579,7 @@
             const input = document.getElementById('audience_room_id');
             if (input) input.readOnly = false;
             const intro = document.getElementById('audience_intro');
-            if (intro) intro.innerText = '강연자에게 받은 방 이름과 비밀번호를 입력하세요.';
+            if (intro) intro.innerText = '방 이름을 입력하고, 비밀번호가 있는 방이면 함께 입력하세요.';
             clearFormError('audience');
             showScreen('role_screen');
             clearAudienceInviteUrl();
@@ -794,9 +796,8 @@
 
         function buildAudienceInvitation() {
             const url = buildAudienceInviteUrl();
-            const invitation = currentRoomPassword
-                ? `LovingVoice 청중 초대\n방 이름: ${currentRoom}\n방 비밀번호: ${currentRoomPassword}\n입장 링크: ${url}`
-                : url.toString();
+            const passwordText = currentRoomPassword || '없음';
+            const invitation = `LovingVoice 청중 초대\n방 이름: ${currentRoom}\n방 비밀번호: ${passwordText}\n입장 링크: ${url}`;
             return { url, invitation };
         }
 
@@ -858,7 +859,7 @@
             if (!currentRoom) return;
             const { url, invitation } = buildAudienceInvitation();
             const status = document.getElementById('invite_copy_status');
-            const shareText = `방 이름: ${currentRoom}\n방 비밀번호: ${currentRoomPassword}`;
+            const shareText = `방 이름: ${currentRoom}\n방 비밀번호: ${currentRoomPassword || '없음'}`;
             if (navigator.share) {
                 try {
                     status.innerText = target === 'kakao'
@@ -896,7 +897,7 @@
             if (!currentRoom || currentRole !== 'host') return;
             const { invitation } = buildAudienceInvitation();
             document.getElementById('invite_room_name').innerText = currentRoom;
-            document.getElementById('invite_room_password').innerText = currentRoomPassword;
+            document.getElementById('invite_room_password').innerText = currentRoomPassword || '없음';
             document.getElementById('invite_text').value = invitation;
             document.getElementById('invite_copy_status').innerText = '';
             document.getElementById('invite_modal').classList.remove('hidden');
@@ -932,12 +933,12 @@
             const saveButton = document.getElementById('room_settings_save');
             errorBox.innerText = '';
             statusBox.innerText = '';
-            if (newRoom.length < 2) {
-                errorBox.innerText = '방 이름을 2자 이상 입력하세요.';
+            if (newRoom.length < 3) {
+                errorBox.innerText = '방 이름을 3자 이상 입력하세요.';
                 return;
             }
-            if (newPassword.length < 4 || newPassword.length > 32) {
-                errorBox.innerText = '청중 입장 비밀번호를 4~32자로 입력하세요.';
+            if (newPassword && newPassword.length < 4) {
+                errorBox.innerText = '방 비밀번호는 비워두거나 4자 이상 입력하세요.';
                 return;
             }
             const currentToken = sessionStorage.getItem(`lovingvoice:host-token:${currentRoom}`) || '';
@@ -970,7 +971,9 @@
                 document.getElementById('host_room_id').value = currentRoom;
                 document.getElementById('host_room_password').value = currentRoomPassword;
                 document.getElementById('room_display').innerText = `방: ${currentRoom}`;
-                statusBox.innerText = '방 이름과 비밀번호를 변경했습니다.';
+                statusBox.innerText = newPassword
+                    ? '방 이름과 비밀번호를 변경했습니다.'
+                    : '비밀번호 없는 방으로 변경했습니다.';
                 setStatus('online', '방 설정 변경 완료 · 방송 유지 중');
                 setTimeout(closeRoomSettings, 700);
             } catch (error) {
@@ -1561,13 +1564,13 @@
             const password = document.getElementById('host_room_password').value.trim();
             const startButton = document.getElementById('host_start_button');
             clearFormError('host');
-            if (room.length < 2) {
-                setFormError('host', '방 이름을 2자 이상 입력하세요.');
+            if (room.length < 3) {
+                setFormError('host', '방 이름을 3자 이상 입력하세요.');
                 document.getElementById('host_room_id').focus();
                 return;
             }
-            if (password.length < 4 || password.length > 32) {
-                setFormError('host', '청중 입장 비밀번호를 4~32자로 입력하세요.');
+            if (password && password.length < 4) {
+                setFormError('host', '방 비밀번호는 비워두거나 4자 이상 입력하세요.');
                 document.getElementById('host_room_password').focus();
                 return;
             }
@@ -1575,9 +1578,9 @@
             startButton.innerText = '방송 준비 중…';
             try {
                 let token = sessionStorage.getItem(`lovingvoice:host-token:${room}`) || '';
-                const savedPassword = sessionStorage.getItem(`lovingvoice:room-password:${room}`) || '';
-                if (token && savedPassword && savedPassword !== password) {
-                    setFormError('host', '이 방을 처음 시작할 때 설정한 비밀번호를 입력하세요.');
+                const savedPassword = sessionStorage.getItem(`lovingvoice:room-password:${room}`);
+                if (token && savedPassword !== null && savedPassword !== password) {
+                    setFormError('host', '이 방을 처음 시작할 때 설정한 방 비밀번호를 입력하세요.');
                     return;
                 }
                 if (!token) {
@@ -1642,7 +1645,7 @@
                     if (e.code === 4001) {
                         sessionStorage.removeItem(`lovingvoice:host-token:${room}`);
                         leaveSession('host').then(() => {
-                            setFormError('host', '방송 권한이 만료되었습니다. 같은 방 이름과 비밀번호로 다시 시작해주세요.');
+                            setFormError('host', '방송 권한이 만료되었습니다. 같은 방 정보로 다시 시작해주세요.');
                         });
                     } else {
                         setStatus('offline', '연결 종료됨');
@@ -1683,13 +1686,13 @@
             const password = document.getElementById('audience_room_password').value.trim();
             const joinButton = document.getElementById('audience_join_button');
             clearFormError('audience');
-            if (!room) {
-                setFormError('audience', '초대받은 방 이름을 입력하세요.');
+            if (room.length < 3) {
+                setFormError('audience', '방 이름을 3자 이상 입력하세요.');
                 document.getElementById('audience_room_id').focus();
                 return;
             }
-            if (!password) {
-                setFormError('audience', '강연자에게 받은 방 비밀번호를 입력하세요.');
+            if (password && password.length < 4) {
+                setFormError('audience', '방 비밀번호는 비워두거나 4자 이상 입력하세요.');
                 document.getElementById('audience_room_password').focus();
                 return;
             }
@@ -1704,11 +1707,19 @@
                 if (!response.ok || !status.exists) {
                     throw new Error('현재 열려 있는 방을 찾을 수 없습니다. 방 이름을 확인해주세요.');
                 }
+                if (status.password_required && !password) {
+                    throw new Error('이 방에는 비밀번호가 필요합니다. 방 비밀번호를 입력해주세요.');
+                }
                 sessionStorage.setItem(`lovingvoice:room-password:${room}`, password);
                 isLeaving = false;
                 showActiveUI(false, room, password);
-                setStatus('offline', '방 비밀번호 확인 중…');
-                audienceConfig = { room, lang, password };
+                setStatus('offline', status.password_required ? '방 비밀번호 확인 중…' : '방 입장 중…');
+                audienceConfig = {
+                    room,
+                    lang,
+                    password,
+                    passwordRequired: Boolean(status.password_required)
+                };
                 connectAudience();
             } catch (error) {
                 setFormError('audience', error.message || '통역방에 입장할 수 없습니다.');
@@ -1807,7 +1818,7 @@
 
         function connectAudience() {
             if (!audienceConfig || isLeaving) return;
-            const { room, lang, password } = audienceConfig;
+            const { room, lang, password, passwordRequired } = audienceConfig;
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/audience/${encodeURIComponent(room)}/${encodeURIComponent(lang)}?transport=pcm16-v1`);
@@ -1966,7 +1977,7 @@
             }
 
             ws.onopen = () => {
-                setStatus('offline', '방 비밀번호 확인 중...');
+                setStatus('offline', passwordRequired ? '방 비밀번호 확인 중...' : '방 입장 중...');
                 ws.send(JSON.stringify({ type: 'authenticate', password }));
                 if (sourceAssistEnabled) {
                     ws.send(JSON.stringify({ type: 'source_audio', enabled: true }));
@@ -2083,7 +2094,7 @@
                 if (event.code === 4001) {
                     audienceConfig = null;
                     leaveSession('audience').then(() => {
-                        setFormError('audience', '방 비밀번호가 올바르지 않습니다. 다시 입력해주세요.');
+                        setFormError('audience', '방 비밀번호가 올바르지 않습니다. 비밀번호가 없는 방이면 입력란을 비워주세요.');
                         const passwordInput = document.getElementById('audience_room_password');
                         passwordInput.select();
                         passwordInput.focus();
@@ -2114,8 +2125,8 @@
                 document.getElementById('audience_room_id').value = room;
                 document.getElementById('audience_intro').innerText = `'${room}' 방에 청중으로 입장합니다.`;
                 const savedPassword = sessionStorage.getItem(`lovingvoice:room-password:${room}`);
-                if (invitedPassword || savedPassword) {
-                    document.getElementById('audience_room_password').value = invitedPassword || savedPassword;
+                if (invitedPassword || savedPassword !== null) {
+                    document.getElementById('audience_room_password').value = invitedPassword || savedPassword || '';
                 }
             }
             if (invitedPassword) history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
@@ -2123,7 +2134,7 @@
                 currentRole = 'audience';
                 document.getElementById('audience_room_id').readOnly = Boolean(room);
                 showScreen('audience_setup_screen');
-                document.getElementById(invitedPassword ? 'audience_lang_select' : 'audience_room_password').focus();
+                document.getElementById(room ? 'audience_lang_select' : 'audience_room_id').focus();
             } else {
                 showScreen('role_screen');
             }

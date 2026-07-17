@@ -83,6 +83,7 @@ async def health():
 async def room_status(room_id: str):
     status = manager.room_status(room_id)
     status["exists"] = room_tokens.room_exists(room_id)
+    status["password_required"] = room_tokens.room_requires_password(room_id)
     status.update(
         {
             "translation_routes": realtime_hub.route_status(
@@ -96,7 +97,7 @@ async def room_status(room_id: str):
 
 class RoomCreateRequest(BaseModel):
     room_id: str
-    room_password: str
+    room_password: str = ""
 
 
 class RoomUpdateRequest(BaseModel):
@@ -112,10 +113,21 @@ def normalize_room_id(value: str) -> str:
         for character in normalized
         if character.isalnum() or character in "-_"
     )
-    if not 2 <= len(normalized) <= 40:
+    if not 3 <= len(normalized) <= 40:
         raise HTTPException(
             status_code=422,
-            detail="방 이름은 문자·숫자·하이픈으로 2~40자 이내여야 합니다.",
+            detail="방 이름은 문자·숫자·하이픈으로 3~40자 이내여야 합니다.",
+        )
+    return normalized
+
+
+def normalize_room_password(value: str) -> str:
+    """Allow passwordless rooms; protected rooms require at least four chars."""
+    normalized = value.strip()
+    if normalized and len(normalized) < 4:
+        raise HTTPException(
+            status_code=422,
+            detail="방 비밀번호는 비워두거나 4자 이상 입력하세요.",
         )
     return normalized
 
@@ -124,12 +136,7 @@ def normalize_room_id(value: str) -> str:
 async def create_room(request: RoomCreateRequest):
     """Register a user-selected room name/password and issue a host token."""
     room_id = normalize_room_id(request.room_id)
-    room_password = request.room_password.strip()
-    if not 4 <= len(room_password) <= 32:
-        raise HTTPException(
-            status_code=422,
-            detail="방 비밀번호는 4~32자로 입력하세요.",
-        )
+    room_password = normalize_room_password(request.room_password)
     try:
         room = room_tokens.create_room(room_id, room_password)
     except ValueError as error:
@@ -145,19 +152,14 @@ async def create_room(request: RoomCreateRequest):
 
 @app.patch("/api/rooms/{current_room_id}")
 async def update_room(current_room_id: str, request: RoomUpdateRequest):
-    """Update a live room's public name and audience password."""
+    """Update a live room's public name and optional room password."""
     if not room_tokens.verify_speaker_token(
         current_room_id, request.speaker_token
     ):
         raise HTTPException(status_code=403, detail="방 설정 변경 권한이 없습니다.")
 
     new_room_id = normalize_room_id(request.room_id)
-    new_password = request.room_password.strip()
-    if not 4 <= len(new_password) <= 32:
-        raise HTTPException(
-            status_code=422,
-            detail="방 비밀번호는 4~32자로 입력하세요.",
-        )
+    new_password = normalize_room_password(request.room_password)
     try:
         room = room_tokens.update_room(
             current_room_id, new_room_id, new_password
@@ -482,7 +484,7 @@ async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
     try:
         auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=8)
     except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
-        await websocket.close(code=4001, reason="Room password required")
+        await websocket.close(code=4001, reason="Room authentication required")
         return
     if auth_message.get("type") != "authenticate" or not room_tokens.verify_room_password(
         room_id, str(auth_message.get("password", ""))
