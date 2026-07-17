@@ -378,7 +378,7 @@
             <div class="glass caption-stage w-full text-left overflow-hidden">
                 <div class="caption-history-track">
                     <div class="caption-meta">
-                        <span id="recent_history_label">지난 자막 · 최대 20개</span>
+                        <span id="recent_history_label">지난 자막 · 최대 20줄</span>
                         <div class="caption-meta-actions">
                             <button id="history_jump_button" type="button" onclick="scrollToLatestCaption()" class="session-action history-jump hidden">최신 자막</button>
                             <button id="source_audio_toggle" type="button" onclick="toggleSourceAudioAssist()" class="session-action hidden" aria-pressed="false" title="원음을 작게 먼저 듣고 번역 음성이 시작되면 자동으로 줄입니다.">원음 보조</button>
@@ -516,7 +516,7 @@
         let recordingStopResolver = null;
         let downloadRecordingOnStop = false;
         let recordingSaved = false;
-        const COMPLETED_CAPTION_HOLD_MS = 2200;
+        const COMPLETED_CAPTION_HOLD_MS = 650;
         const AUDIENCE_HISTORY_MAX_ITEMS = 20;
         const RECORDING_TRANSCRIPT_GRACE_MS = 1600;
         const PLAYBACK_START_LEAD_SECONDS = 0.008;
@@ -709,7 +709,7 @@
                 : '강연자의 다음 실시간 통역을 기다리는 중…';
             document.getElementById('recent_history_label').innerText = isSpeaker
                 ? '완료된 강연 자막'
-                : `지난 자막 · 최대 ${AUDIENCE_HISTORY_MAX_ITEMS}개`;
+                : `지난 자막 · 최대 ${AUDIENCE_HISTORY_MAX_ITEMS}줄`;
             document.getElementById('current_caption_label').innerText = isSpeaker ? '현재 강연 자막' : '현재 자막';
             document.getElementById('route_badge').innerText = isSpeaker ? '언어별 공유 전송' : '공유 언어 채널';
             const sourcePreview = document.getElementById('source_preview_area');
@@ -1989,7 +1989,7 @@
                         Math.max(1, Number(data.policy?.max_items) || AUDIENCE_HISTORY_MAX_ITEMS)
                     );
                     recentHistoryMaxAgeMs = Math.max(30000, (Number(data.policy?.max_age_seconds) || 300) * 1000);
-                    document.getElementById('recent_history_label').innerText = `지난 자막 · 최대 ${recentHistoryLimit}개`;
+                    document.getElementById('recent_history_label').innerText = `지난 자막 · 최대 ${recentHistoryLimit}줄`;
                     (data.items || []).forEach(item => renderHistoryItem(item, { animate: false, followLatest: false }));
                     trimRecentHistory();
                     requestAnimationFrame(() => scrollToLatestCaption({ behavior: 'auto' }));

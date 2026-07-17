@@ -15,6 +15,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from collections.abc import Awaitable, Callable, Iterable
 
@@ -294,6 +295,7 @@ class RealtimeTranslationHub:
             tuple[str, str, str], OpenAITranslationSession
         ] = {}
         self.transcript_buffers: dict[tuple[str, str, str], str] = {}
+        self.translation_seen_keys: set[tuple[str, str, str]] = set()
         self.source_transcript_buffers: dict[tuple[str, str], str] = {}
         self._lock = asyncio.Lock()
 
@@ -415,6 +417,7 @@ class RealtimeTranslationHub:
         self, room_id: str, source_id: str, language: str, event: dict
     ) -> None:
         event_type = event.get("type", "")
+        key = (room_id, source_id, language)
         if event_type == "session.output_audio.delta":
             await self.on_language_event(
                 room_id,
@@ -428,38 +431,25 @@ class RealtimeTranslationHub:
                 },
             )
         elif event_type == "session.output_transcript.delta":
-            key = (room_id, source_id, language)
-            self.transcript_buffers[key] = self.transcript_buffers.get(key, "") + event.get(
-                "delta", ""
-            )
-            await self.on_language_event(
+            await self._route_translation_delta(
                 room_id,
+                source_id,
                 language,
-                {
-                    "type": "translation_delta",
-                    "text": event.get("delta", ""),
-                    "source_id": source_id,
-                },
+                str(event.get("delta", "")),
             )
         elif event_type == "session.output_transcript.done":
-            key = (room_id, source_id, language)
+            if key not in self.translation_seen_keys:
+                full_transcript = str(event.get("transcript", "")).strip()
+                if full_transcript:
+                    await self._route_translation_delta(
+                        room_id, source_id, language, full_transcript
+                    )
             completed_text = self.transcript_buffers.pop(key, "").strip()
-            if not completed_text:
-                completed_text = str(event.get("transcript", "")).strip()
-            caption = None
-            if completed_text and self.on_translation_complete:
-                caption = await self.on_translation_complete(
-                    room_id, language, source_id, completed_text
+            if completed_text:
+                await self._complete_translation_segment(
+                    room_id, source_id, language, completed_text
                 )
-            await self.on_language_event(
-                room_id,
-                language,
-                {
-                    "type": "translation_done",
-                    "source_id": source_id,
-                    "caption": caption,
-                },
-            )
+            self.translation_seen_keys.discard(key)
         elif event_type == "session.input_transcript.delta":
             # Publish each source transcript once even when it has many targets.
             primary = next(
@@ -517,6 +507,148 @@ class RealtimeTranslationHub:
                 room_id, language, {**event, "source_id": source_id}
             )
 
+    @staticmethod
+    def _natural_sentence_boundaries(text: str) -> list[int]:
+        """Return safe sentence ends while avoiding common abbreviations."""
+        boundaries = []
+        abbreviations = {
+            "mr", "mrs", "ms", "dr", "prof", "rev", "sr", "jr",
+            "st", "vs", "etc", "e.g", "i.e", "no", "fig",
+        }
+        index = 0
+        while index < len(text):
+            character = text[index]
+            is_boundary = character in "!?。！？"
+            if character == ".":
+                previous = text[index - 1] if index else ""
+                following = text[index + 1] if index + 1 < len(text) else ""
+                if following == ".":
+                    index += 1
+                    continue
+                if previous.isdigit() and following.isdigit():
+                    index += 1
+                    continue
+                token_match = re.search(r"([A-Za-z](?:[A-Za-z.]*)?)\.$", text[: index + 1])
+                token = token_match.group(1).lower() if token_match else ""
+                token_parts = token.split(".") if token else []
+                is_initialism = len(token_parts) > 1 and all(
+                    len(part) == 1 for part in token_parts
+                )
+                if (
+                    token in abbreviations
+                    or (len(token) == 1 and token.isalpha())
+                    or is_initialism
+                ):
+                    index += 1
+                    continue
+                lookahead = index + 1
+                while lookahead < len(text) and text[lookahead] in '"\'”’)]}':
+                    lookahead += 1
+                separator_start = lookahead
+                while lookahead < len(text) and text[lookahead].isspace():
+                    lookahead += 1
+                if lookahead < len(text):
+                    next_character = text[lookahead]
+                    is_boundary = (
+                        lookahead > separator_start
+                        or not next_character.islower()
+                    )
+                else:
+                    is_boundary = True
+
+            if is_boundary:
+                end = index + 1
+                while end < len(text) and text[end] in ".!?。！？":
+                    end += 1
+                while end < len(text) and text[end] in '"\'”’)]}':
+                    end += 1
+                while end < len(text) and text[end].isspace():
+                    end += 1
+                boundaries.append(end)
+                index = end
+            else:
+                index += 1
+        return boundaries
+
+    async def _route_translation_delta(
+        self,
+        room_id: str,
+        source_id: str,
+        language: str,
+        delta: str,
+    ) -> None:
+        if not delta:
+            return
+        key = (room_id, source_id, language)
+        previous = self.transcript_buffers.get(key, "")
+        combined = previous + delta
+        boundaries = self._natural_sentence_boundaries(combined)
+        self.translation_seen_keys.add(key)
+
+        if not boundaries:
+            self.transcript_buffers[key] = combined
+            await self._send_translation_delta(
+                room_id, source_id, language, delta
+            )
+            return
+
+        cursor = 0
+        for boundary_index, boundary in enumerate(boundaries):
+            segment = combined[cursor:boundary]
+            incremental_start = len(previous) if boundary_index == 0 else cursor
+            incremental_text = combined[incremental_start:boundary]
+            await self._send_translation_delta(
+                room_id, source_id, language, incremental_text
+            )
+            if segment.strip():
+                await self._complete_translation_segment(
+                    room_id, source_id, language, segment.strip()
+                )
+            cursor = boundary
+
+        remainder = combined[cursor:]
+        self.transcript_buffers[key] = remainder
+        if remainder:
+            await self._send_translation_delta(
+                room_id, source_id, language, remainder
+            )
+
+    async def _send_translation_delta(
+        self, room_id: str, source_id: str, language: str, text: str
+    ) -> None:
+        if not text:
+            return
+        await self.on_language_event(
+            room_id,
+            language,
+            {
+                "type": "translation_delta",
+                "text": text,
+                "source_id": source_id,
+            },
+        )
+
+    async def _complete_translation_segment(
+        self, room_id: str, source_id: str, language: str, text: str
+    ) -> None:
+        completed_text = text.strip()
+        if not completed_text:
+            return
+        caption = None
+        if self.on_translation_complete:
+            caption = await self.on_translation_complete(
+                room_id, language, source_id, completed_text
+            )
+        await self.on_language_event(
+            room_id,
+            language,
+            {
+                "type": "translation_done",
+                "source_id": source_id,
+                "caption": caption,
+            },
+        )
+
     async def close_speaker(self, room_id: str, source_id: str) -> None:
         async with self._lock:
             keys = [
@@ -525,21 +657,24 @@ class RealtimeTranslationHub:
                 if key[0] == room_id and key[1] == source_id
             ]
             speaker_sessions = [self.sessions.pop(key) for key in keys]
-            for key in keys:
-                self.transcript_buffers.pop(key, None)
             self.source_transcript_buffers.pop((room_id, source_id), None)
         if speaker_sessions:
             await asyncio.gather(
                 *(session.close() for session in speaker_sessions),
                 return_exceptions=True,
             )
+        for key in keys:
+            pending_text = self.transcript_buffers.pop(key, "").strip()
+            if pending_text:
+                await self._complete_translation_segment(
+                    key[0], key[1], key[2], pending_text
+                )
+            self.translation_seen_keys.discard(key)
 
     async def close_room(self, room_id: str) -> None:
         async with self._lock:
             keys = [key for key in self.sessions if key[0] == room_id]
             room_sessions = [self.sessions.pop(key) for key in keys]
-            for key in keys:
-                self.transcript_buffers.pop(key, None)
             for source_key in [
                 key for key in self.source_transcript_buffers if key[0] == room_id
             ]:
@@ -549,6 +684,13 @@ class RealtimeTranslationHub:
                 *(session.close() for session in room_sessions),
                 return_exceptions=True,
             )
+        for key in keys:
+            pending_text = self.transcript_buffers.pop(key, "").strip()
+            if pending_text:
+                await self._complete_translation_segment(
+                    key[0], key[1], key[2], pending_text
+                )
+            self.translation_seen_keys.discard(key)
 
     async def close(self) -> None:
         rooms = list({room for room, _, _ in self.sessions})

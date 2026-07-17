@@ -296,3 +296,108 @@ async def test_completed_translation_is_recorded_before_done_event():
         "source_id": "speaker",
         "caption": {"id": "caption-1", "text": "Hello world"},
     }
+
+
+@pytest.mark.asyncio
+async def test_continuous_translation_is_split_into_one_caption_per_sentence():
+    language_events = []
+    completed = []
+
+    async def ignore_room(*args):
+        pass
+
+    async def on_language(room, language, event):
+        language_events.append(event)
+
+    async def on_complete(room, language, source, text):
+        completed.append(text)
+        return {"id": f"caption-{len(completed)}", "text": text}
+
+    hub = RealtimeTranslationHub(
+        ignore_room, on_language, on_complete, api_key="test-key"
+    )
+    hub.sessions[("room", "speaker", "en-US")] = object()
+    continuous_text = (
+        "So, hello. Hello. Today, I want us to read God's Word together. "
+        "God loves you. Today, God has a happy message for us and wants "
+        "to give it to us."
+    )
+
+    await hub._route_event(
+        "room",
+        "speaker",
+        "en-US",
+        {"type": "session.output_transcript.delta", "delta": continuous_text},
+    )
+
+    # All punctuated sentences, including the final one, are complete without
+    # waiting for the provider's response-done event.
+    assert completed == [
+        "So, hello.",
+        "Hello.",
+        "Today, I want us to read God's Word together.",
+        "God loves you.",
+        "Today, God has a happy message for us and wants to give it to us.",
+    ]
+
+    await hub._route_event(
+        "room",
+        "speaker",
+        "en-US",
+        {"type": "session.output_transcript.done"},
+    )
+
+    assert completed == [
+        "So, hello.",
+        "Hello.",
+        "Today, I want us to read God's Word together.",
+        "God loves you.",
+        "Today, God has a happy message for us and wants to give it to us.",
+    ]
+    reconstructed_current = ""
+    reconstructed_history = []
+    for event in language_events:
+        if event["type"] == "translation_delta":
+            reconstructed_current += event["text"]
+        elif event["type"] == "translation_done":
+            reconstructed_history.append(event["caption"]["text"])
+            reconstructed_current = ""
+    assert reconstructed_history == completed
+    assert reconstructed_current == ""
+
+
+@pytest.mark.asyncio
+async def test_translation_done_completes_unpunctuated_caption():
+    completed = []
+
+    async def ignore(*args):
+        pass
+
+    async def on_complete(room, language, source, text):
+        completed.append(text)
+        return {"id": "caption-pause", "text": text}
+
+    hub = RealtimeTranslationHub(
+        ignore, ignore, on_complete, api_key="test-key"
+    )
+    hub.sessions[("room", "speaker", "en-US")] = object()
+
+    await hub._route_event(
+        "room",
+        "speaker",
+        "en-US",
+        {
+            "type": "session.output_transcript.delta",
+            "delta": "A spoken phrase without punctuation",
+        },
+    )
+    assert completed == []
+
+    await hub._route_event(
+        "room",
+        "speaker",
+        "en-US",
+        {"type": "session.output_transcript.done"},
+    )
+
+    assert completed == ["A spoken phrase without punctuation"]
