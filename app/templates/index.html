@@ -140,6 +140,7 @@
         .session-chip { padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; color: #334155; font-size: .8rem; font-weight: 700; }
         .session-action { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #334155; font-size: .82rem; font-weight: 750; }
         .session-action.primary { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+        .session-action.active { border-color: #93c5fd; background: #dbeafe; color: #1d4ed8; }
         .session-action:hover { border-color: #93c5fd; }
         .caption-stage { display: grid; grid-template-rows: minmax(0, 8fr) minmax(0, 2fr); height: min(62vh, 580px); min-height: 420px; margin-top: 18px; padding: 18px; border-radius: 24px; }
         .caption-history-track { display: flex; min-height: 0; flex-direction: column; overflow: hidden; }
@@ -151,6 +152,8 @@
         .history-caption { animation: caption-rise .32s cubic-bezier(.22, 1, .36, 1) both; }
         .caption-current-track { position: relative; display: grid; min-height: 0; align-content: center; overflow-y: auto; padding: 22px 16px 8px; border-top: 2px solid #94a3b8; background: linear-gradient(180deg, rgba(37,99,235,.04), transparent 42%); }
         .caption-current-label { position: absolute; top: 6px; left: 16px; color: #64748b; font-size: .68rem; font-weight: 800; letter-spacing: .04em; }
+        .source-preview { margin: 0 0 6px; color: #64748b; font-size: clamp(.75rem, 1.6vw, .95rem); font-weight: 650; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .source-preview.hidden { display: none; }
         #subtitle_area { width: 100%; min-height: 0; }
         @keyframes caption-rise {
             from { opacity: 0; transform: translateY(14px); }
@@ -204,6 +207,8 @@
         html[data-theme="dark"] .invite-qr-note { color: #94a3b8; }
         html[data-theme="dark"] .caption-current-track { border-color: #475569; background: linear-gradient(180deg, rgba(59,130,246,.09), transparent 42%); }
         html[data-theme="dark"] .caption-current-label { color: #94a3b8; }
+        html[data-theme="dark"] .source-preview { color: #94a3b8; }
+        html[data-theme="dark"] .session-action.active { border-color: #60a5fa; background: #1e3a8a; color: #dbeafe; }
         @media (prefers-reduced-motion: reduce) {
             .history-caption { animation: none; }
         }
@@ -376,6 +381,7 @@
                         <span id="recent_history_label">지난 자막 · 최대 20개</span>
                         <div class="caption-meta-actions">
                             <button id="history_jump_button" type="button" onclick="scrollToLatestCaption()" class="session-action history-jump hidden">최신 자막</button>
+                            <button id="source_audio_toggle" type="button" onclick="toggleSourceAudioAssist()" class="session-action hidden" aria-pressed="false" title="원음을 작게 먼저 듣고 번역 음성이 시작되면 자동으로 줄입니다.">원음 보조</button>
                             <span id="route_badge" class="session-chip">공유 언어 채널</span>
                         </div>
                     </div>
@@ -383,6 +389,7 @@
                 </div>
                 <div class="caption-current-track">
                     <span id="current_caption_label" class="caption-current-label">현재 자막</span>
+                    <div id="source_preview_area" class="source-preview hidden" aria-live="polite"></div>
                     <div id="subtitle_area" role="status" aria-live="assertive" aria-atomic="true" class="text-2xl md:text-4xl font-bold leading-tight break-keep text-blue-100">
                         강연이 시작되면 여기에 실시간 통역 자막이 표시됩니다.
                     </div>
@@ -470,8 +477,13 @@
         let ws;
         let audioCtx;
         let playbackCtx;
+        let translationGainNode;
+        let sourceAssistGainNode;
         let playbackUnlockCleanup = null;
         let playbackBlockedNoticeShown = false;
+        let sourceAssistEnabled = false;
+        let sourceAssistRestoreTimer = null;
+        let translationAudioActiveUntil = 0;
         let workletNode;
         let micStream;
         const nextPlaybackTimes = new Map();
@@ -637,6 +649,47 @@
             dot.className = 'w-3 h-3 rounded-full ' + (state === 'online' ? 'bg-green-500' : (state === 'error' ? 'bg-red-500 pulse-red' : 'bg-gray-500'));
         }
 
+        function updateSourceAssistButton() {
+            const button = document.getElementById('source_audio_toggle');
+            if (!button) return;
+            button.classList.toggle('active', sourceAssistEnabled);
+            button.setAttribute('aria-pressed', String(sourceAssistEnabled));
+            button.innerText = sourceAssistEnabled ? '원음 보조 켬' : '원음 보조';
+        }
+
+        function stopSourceAssistPlayback() {
+            [...scheduledPlaybackSources.entries()].forEach(([sourceId, items]) => {
+                if (!sourceId.startsWith('source:')) return;
+                items.forEach(item => {
+                    try { item.source.stop(); } catch (error) {}
+                });
+                scheduledPlaybackSources.delete(sourceId);
+                nextPlaybackTimes.delete(sourceId);
+            });
+        }
+
+        function setSourceAssistEnabled(enabled, { notifyServer = true } = {}) {
+            sourceAssistEnabled = currentRole === 'audience' && Boolean(enabled);
+            translationAudioActiveUntil = 0;
+            clearTimeout(sourceAssistRestoreTimer);
+            sourceAssistRestoreTimer = null;
+            updateSourceAssistButton();
+            updateSourceAssistDucking();
+            if (!sourceAssistEnabled) stopSourceAssistPlayback();
+            if (notifyServer && ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'source_audio',
+                    enabled: sourceAssistEnabled
+                }));
+            }
+        }
+
+        function toggleSourceAudioAssist() {
+            if (currentRole !== 'audience') return;
+            primePlaybackContext();
+            setSourceAssistEnabled(!sourceAssistEnabled);
+        }
+
         function showActiveUI(isSpeaker, room, password = '') {
             currentRole = isSpeaker ? 'host' : 'audience';
             currentRoom = room;
@@ -647,6 +700,8 @@
             document.getElementById('speaker_controls').classList.toggle('hidden', !isSpeaker);
             document.getElementById('invite_button').classList.toggle('hidden', !isSpeaker);
             document.getElementById('room_settings_button').classList.toggle('hidden', !isSpeaker);
+            document.getElementById('source_audio_toggle').classList.toggle('hidden', isSpeaker);
+            setSourceAssistEnabled(false, { notifyServer: false });
             document.getElementById('session_role_label').innerText = isSpeaker ? '강연자 방송' : '청중 통역';
             document.getElementById('room_display').innerText = '방: ' + currentRoom;
             document.getElementById('subtitle_area').innerText = isSpeaker
@@ -657,6 +712,9 @@
                 : `지난 자막 · 최대 ${AUDIENCE_HISTORY_MAX_ITEMS}개`;
             document.getElementById('current_caption_label').innerText = isSpeaker ? '현재 강연 자막' : '현재 자막';
             document.getElementById('route_badge').innerText = isSpeaker ? '언어별 공유 전송' : '공유 언어 채널';
+            const sourcePreview = document.getElementById('source_preview_area');
+            sourcePreview.innerText = '';
+            sourcePreview.classList.add('hidden');
             const historyBox = document.getElementById('history_area');
             historyBox.onscroll = null;
             delete historyBox.dataset.followLatest;
@@ -1231,6 +1289,12 @@
                 await playbackCtx.close().catch(() => {});
                 playbackCtx = null;
             }
+            translationGainNode = null;
+            sourceAssistGainNode = null;
+            clearTimeout(sourceAssistRestoreTimer);
+            sourceAssistRestoreTimer = null;
+            translationAudioActiveUntil = 0;
+            sourceAssistEnabled = false;
             if (playbackUnlockCleanup) playbackUnlockCleanup();
             playbackUnlockCleanup = null;
             playbackBlockedNoticeShown = false;
@@ -1317,6 +1381,39 @@
             };
         }
 
+        function ensurePlaybackGraph(ctx) {
+            if (!translationGainNode) {
+                translationGainNode = ctx.createGain();
+                translationGainNode.gain.value = 1;
+                translationGainNode.connect(ctx.destination);
+            }
+            if (!sourceAssistGainNode) {
+                sourceAssistGainNode = ctx.createGain();
+                sourceAssistGainNode.gain.value = 0;
+                sourceAssistGainNode.connect(ctx.destination);
+            }
+            updateSourceAssistDucking();
+        }
+
+        function updateSourceAssistDucking() {
+            if (!playbackCtx || !sourceAssistGainNode) return;
+            clearTimeout(sourceAssistRestoreTimer);
+            sourceAssistRestoreTimer = null;
+            const remainingMs = translationAudioActiveUntil - performance.now();
+            const targetGain = !sourceAssistEnabled
+                ? 0
+                : (remainingMs > 0 ? 0.025 : 0.11);
+            const now = playbackCtx.currentTime;
+            sourceAssistGainNode.gain.cancelScheduledValues(now);
+            sourceAssistGainNode.gain.setTargetAtTime(targetGain, now, 0.035);
+            if (sourceAssistEnabled && remainingMs > 0) {
+                sourceAssistRestoreTimer = setTimeout(
+                    updateSourceAssistDucking,
+                    remainingMs + 30
+                );
+            }
+        }
+
         function primePlaybackContext() {
             if (!playbackCtx) {
                 playbackCtx = new (window.AudioContext || window.webkitAudioContext)({
@@ -1324,6 +1421,7 @@
                     latencyHint: 'interactive'
                 });
             }
+            ensurePlaybackGraph(playbackCtx);
             if (playbackCtx.state === 'suspended') {
                 // This function is called directly inside the audience's join
                 // gesture, before the first await. That preserves Chrome/iOS
@@ -1360,20 +1458,33 @@
         function playRealtimePcmFrame(frame) {
             if (!(frame instanceof ArrayBuffer) || frame.byteLength < 40) return;
             const view = new DataView(frame);
-            if (
-                view.getUint8(0) !== 76
-                || view.getUint8(1) !== 86
-                || view.getUint8(2) !== 48
-                || view.getUint8(3) !== 49
-            ) return;
+            const magic = String.fromCharCode(
+                view.getUint8(0),
+                view.getUint8(1),
+                view.getUint8(2),
+                view.getUint8(3)
+            );
+            if (magic !== 'LV01' && magic !== 'LVS1') return;
+            const kind = magic === 'LVS1' ? 'source' : 'translation';
+            if (kind === 'source' && !sourceAssistEnabled) return;
             const sampleRate = view.getUint32(4, true);
             const sourceId = new TextDecoder()
                 .decode(new Uint8Array(frame, 8, 32))
                 .replace(/\0+$/, '') || 'default';
-            playPcm16Bytes(new Uint8Array(frame, 40), sampleRate, sourceId);
+            playPcm16Bytes(
+                new Uint8Array(frame, 40),
+                sampleRate,
+                kind === 'source' ? `source:${sourceId}` : sourceId,
+                { kind }
+            );
         }
 
-        function playPcm16Bytes(bytes, sampleRate = 24000, sourceId = 'default') {
+        function playPcm16Bytes(
+            bytes,
+            sampleRate = 24000,
+            sourceId = 'default',
+            { kind = 'translation' } = {}
+        ) {
             if (!bytes?.byteLength) return;
             const ctx = ensurePlaybackContext();
             if (ctx.state !== 'running' && !playbackBlockedNoticeShown) {
@@ -1390,7 +1501,7 @@
             for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i] / 32768;
             const source = ctx.createBufferSource();
             source.buffer = buffer;
-            source.connect(ctx.destination);
+            source.connect(kind === 'source' ? sourceAssistGainNode : translationGainNode);
             const now = ctx.currentTime;
             let scheduled = (scheduledPlaybackSources.get(sourceId) || [])
                 .filter(item => item.endTime > now);
@@ -1435,6 +1546,14 @@
             };
             source.start(nextTime);
             nextPlaybackTimes.set(sourceId, nextTime + effectiveDuration);
+            if (kind === 'translation') {
+                translationAudioActiveUntil = Math.max(
+                    translationAudioActiveUntil,
+                    performance.now()
+                        + Math.max(0, nextTime + effectiveDuration - ctx.currentTime) * 1000
+                );
+                updateSourceAssistDucking();
+            }
         }
 
         async function startSpeaker() {
@@ -1696,7 +1815,9 @@
 
             const translations = new Map();
             const sourceTranscripts = new Map();
+            const sourceActivitySources = new Set();
             const area = document.getElementById('subtitle_area');
+            const sourcePreviewArea = document.getElementById('source_preview_area');
             const historyBox = document.getElementById('history_area');
             const historyJumpButton = document.getElementById('history_jump_button');
             const historyKey = `lovingvoice:subtitles:${room}:${lang}`;
@@ -1834,9 +1955,22 @@
                 pushToHistory
             );
 
+            function showSourcePreview(text) {
+                sourcePreviewArea.innerText = text;
+                sourcePreviewArea.classList.remove('hidden');
+            }
+
+            function hideSourcePreview() {
+                sourcePreviewArea.innerText = '';
+                sourcePreviewArea.classList.add('hidden');
+            }
+
             ws.onopen = () => {
                 setStatus('offline', '방 비밀번호 확인 중...');
                 ws.send(JSON.stringify({ type: 'authenticate', password }));
+                if (sourceAssistEnabled) {
+                    ws.send(JSON.stringify({ type: 'source_audio', enabled: true }));
+                }
                 clearInterval(heartbeatTimer);
                 heartbeatTimer = setInterval(() => {
                     if (ws?.readyState === WebSocket.OPEN) ws.send('ping');
@@ -1867,15 +2001,28 @@
                     } else {
                         setStatus('offline', '강연자가 방을 시작하기를 기다리는 중…');
                     }
+                } else if (data.type === 'source_activity') {
+                    const sourceId = data.source_id || 'default';
+                    if (data.active && !translations.has(sourceId)) {
+                        if (!sourceActivitySources.has(sourceId)) {
+                            sourceActivitySources.add(sourceId);
+                            captionDisplay.startCaption();
+                        }
+                        if (!sourceTranscripts.has(sourceId)) {
+                            showSourcePreview('원문을 듣는 중…');
+                        }
+                        captionDisplay.updateCaption('동시 통역 중…', { sourcePreview: true });
+                    }
                 } else if (data.type === 'transcript_delta') {
                     const sourceId = data.source_id || 'default';
-                    if (!sourceTranscripts.has(sourceId)) captionDisplay.startCaption();
+                    if (!sourceTranscripts.has(sourceId) && !sourceActivitySources.has(sourceId)) {
+                        captionDisplay.startCaption();
+                    }
+                    sourceActivitySources.add(sourceId);
                     const sourceText = (sourceTranscripts.get(sourceId) || '') + (data.text || '');
                     sourceTranscripts.set(sourceId, sourceText);
-                    // Source transcription can arrive before translated text.
-                    // Never show it as if it were the listener's selected-language
-                    // caption; the audible translation is already streaming.
                     if (!translations.has(sourceId)) {
+                        showSourcePreview(`원문 · ${sourceText}`);
                         captionDisplay.updateCaption('동시 통역 중…', { sourcePreview: true });
                     }
                 } else if (data.type === 'transcript_done') {
@@ -1886,6 +2033,7 @@
                     if (!translations.has(sourceId)) captionDisplay.startCaption();
                     const translatedText = (translations.get(sourceId) || '') + (data.text || '');
                     translations.set(sourceId, translatedText);
+                    hideSourcePreview();
                     captionDisplay.updateCaption(translatedText);
                 } else if (data.type === 'translation_done') {
                     const sourceId = data.source_id || 'default';
@@ -1893,6 +2041,8 @@
                     const completedText = data.caption?.text || translatedText;
                     if (completedText) captionDisplay.completeCaption(completedText, data.caption);
                     translations.delete(sourceId);
+                    sourceActivitySources.delete(sourceId);
+                    hideSourcePreview();
                 } else if (data.type === 'audio_delta') {
                     playPcm16(data.audio, data.sample_rate || 24000, data.source_id || 'default');
                 } else if (data.type === 'engine_status') {
@@ -1901,8 +2051,10 @@
                     setStatus('error', data.message || '통역 엔진 오류');
                 } else if (data.type === 'transcript') {
                     captionDisplay.startCaption();
+                    if (data.text) showSourcePreview(`원문 · ${data.text}`);
                     captionDisplay.updateCaption('동시 통역 중…', { sourcePreview: true });
                 } else if (data.type === 'translation') {
+                    hideSourcePreview();
                     captionDisplay.completeCaption(data.text);
                     
                     // Phase 1에서는 audio가 빈 문자열로 옴 (자막만 먼저 도착)

@@ -116,6 +116,38 @@ async def test_negotiated_pcm_audio_uses_compact_binary_frame_with_json_fallback
 
 
 @pytest.mark.asyncio
+async def test_source_audio_is_fanned_out_only_to_opted_in_binary_listeners():
+    import asyncio
+
+    manager = ConnectionManager()
+    assisted = FakeAudience()
+    standard = FakeAudience()
+    await manager.add_audience(
+        "room", "ko-KR", assisted, audio_transport="pcm16-v1"
+    )
+    await manager.add_audience(
+        "room", "ko-KR", standard, audio_transport="pcm16-v1"
+    )
+    manager.set_source_audio_enabled(assisted, True)
+
+    await manager.queue_source_audio_to_room(
+        "room", b"\x01\x00\x02\x00", "speaker-source", 24000
+    )
+    for _ in range(20):
+        if assisted.binary_messages:
+            break
+        await asyncio.sleep(0.01)
+
+    frame = assisted.binary_messages[0]
+    assert frame[:4] == b"LVS1"
+    assert struct.unpack("<I", frame[4:8])[0] == 24000
+    assert frame[8:40].rstrip(b"\0") == b"speaker-source"
+    assert frame[40:] == b"\x01\x00\x02\x00"
+    assert standard.binary_messages == []
+    await manager.close_realtime_fanout()
+
+
+@pytest.mark.asyncio
 async def test_realtime_fanout_does_not_block_on_slow_audience():
     import asyncio
 

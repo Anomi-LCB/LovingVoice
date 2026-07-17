@@ -19,6 +19,10 @@ class ConnectionManager:
         # transport per websocket lets already-open/older pages continue to
         # receive the JSON/Base64 format during rolling deploys.
         self.audience_audio_transports = {}
+        # Raw source audio is opt-in. It is used only as a quiet, immediate
+        # listening aid until translated speech arrives, and never creates an
+        # additional OpenAI translation route.
+        self.source_audio_audiences = set()
         # 강연자 관리: {room_id: [websocket]}
         self.active_speakers = {}
         # Late joiners receive only a small, recent context window. Count, age,
@@ -47,6 +51,8 @@ class ConnectionManager:
         self._room_event_workers = {}
         self._language_event_queues = {}
         self._language_event_workers = {}
+        self._source_audio_queues = {}
+        self._source_audio_workers = {}
 
     async def add_speaker(self, room_id, websocket):
         """방에 강연자를 추가한다. Realtime 모드는 인원 제한을 두지 않는다."""
@@ -92,6 +98,7 @@ class ConnectionManager:
     def remove_audience(self, room_id, lang, websocket):
         room_id = self.resolve_room_id(room_id)
         self.audience_audio_transports.pop(id(websocket), None)
+        self.source_audio_audiences.discard(id(websocket))
         try:
             if room_id in self.active_connections and lang in self.active_connections[room_id]:
                 self.active_connections[room_id][lang].remove(websocket)
@@ -100,10 +107,25 @@ class ConnectionManager:
                     self._cancel_language_fanout(room_id, lang)
                 if not self.active_connections[room_id]:
                     del self.active_connections[room_id]
+                    self._cancel_source_audio_fanout(room_id)
                     if room_id not in self.active_speakers:
                         self._cancel_room_fanout(room_id)
         except ValueError:
             pass
+
+    def set_source_audio_enabled(self, websocket, enabled):
+        if enabled:
+            self.source_audio_audiences.add(id(websocket))
+        else:
+            self.source_audio_audiences.discard(id(websocket))
+
+    def has_source_audio_audience(self, room_id):
+        room_id = self.resolve_room_id(room_id)
+        return any(
+            id(ws) in self.source_audio_audiences
+            for websockets in self.active_connections.get(room_id, {}).values()
+            for ws in websockets
+        )
 
     async def broadcast_to_room(self, room_id, text, engine):
         """방에 있는 모든 언어별 청중에게 번역된 오디오를 병렬로 전송"""
@@ -261,6 +283,27 @@ class ConnectionManager:
             )
         self._put_latest(queue, data)
 
+    async def queue_source_audio_to_room(
+        self, room_id, pcm16, source_id, sample_rate=24000
+    ):
+        """Queue a bounded raw-source preview stream for opted-in listeners."""
+        room_id = self.resolve_room_id(room_id)
+        if not pcm16 or not self.has_source_audio_audience(room_id):
+            return
+        queue = self._source_audio_queues.get(room_id)
+        if queue is None:
+            queue = asyncio.Queue(maxsize=4)
+            self._source_audio_queues[room_id] = queue
+            self._source_audio_workers[room_id] = asyncio.create_task(
+                self._source_audio_fanout_worker(room_id, queue)
+            )
+        if queue.full():
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+        queue.put_nowait((bytes(pcm16), str(source_id), int(sample_rate)))
+
     async def _room_fanout_worker(self, room_id, queue):
         try:
             while True:
@@ -283,9 +326,56 @@ class ConnectionManager:
                 "Realtime language fan-out failed for %s/%s", room_id, lang
             )
 
+    async def _source_audio_fanout_worker(self, room_id, queue):
+        try:
+            while True:
+                pcm16, source_id, sample_rate = await queue.get()
+                await self._broadcast_source_audio(
+                    room_id, pcm16, source_id, sample_rate
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Source-audio fan-out failed for %s", room_id)
+
+    async def _broadcast_source_audio(
+        self, room_id, pcm16, source_id, sample_rate
+    ):
+        room_id = self.resolve_room_id(room_id)
+        source_bytes = (
+            str(source_id)
+            .encode("ascii", errors="ignore")[:32]
+            .ljust(32, b"\0")
+        )
+        frame = b"LVS1" + struct.pack("<I", sample_rate) + source_bytes + pcm16
+        targets = [
+            ws
+            for websockets in self.active_connections.get(room_id, {}).values()
+            for ws in websockets
+            if ws.client_state.name == "CONNECTED"
+            and id(ws) in self.source_audio_audiences
+            and self.audience_audio_transports.get(id(ws)) == "pcm16-v1"
+        ]
+        if targets:
+            await asyncio.gather(
+                *(
+                    asyncio.wait_for(
+                        ws.send_bytes(frame), timeout=self.realtime_send_timeout
+                    )
+                    for ws in targets
+                ),
+                return_exceptions=True,
+            )
+
     def _cancel_room_fanout(self, room_id):
         worker = self._room_event_workers.pop(room_id, None)
         self._room_event_queues.pop(room_id, None)
+        if worker:
+            worker.cancel()
+
+    def _cancel_source_audio_fanout(self, room_id):
+        worker = self._source_audio_workers.pop(room_id, None)
+        self._source_audio_queues.pop(room_id, None)
         if worker:
             worker.cancel()
 
@@ -300,11 +390,14 @@ class ConnectionManager:
         workers = [
             *self._room_event_workers.values(),
             *self._language_event_workers.values(),
+            *self._source_audio_workers.values(),
         ]
         self._room_event_workers.clear()
         self._language_event_workers.clear()
+        self._source_audio_workers.clear()
         self._room_event_queues.clear()
         self._language_event_queues.clear()
+        self._source_audio_queues.clear()
         for worker in workers:
             worker.cancel()
         if workers:

@@ -2,9 +2,12 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 import logging
+import math
 import os
 import asyncio
+import json
 import re
+import time
 import uuid
 from urllib.parse import quote
 from dotenv import load_dotenv
@@ -198,6 +201,66 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
 
     await manager.add_speaker(room_id, websocket)
     source_id = uuid.uuid4().hex
+    source_audio_buffer = bytearray()
+    last_activity_sent_at = 0.0
+    source_was_active = False
+    source_silence_started_at = None
+
+    async def publish_source_feedback(pcm16: bytes) -> None:
+        """Emit immediate activity and an optional, batched source-audio bed."""
+        nonlocal last_activity_sent_at, source_was_active, source_silence_started_at
+        now = time.monotonic()
+        if now - last_activity_sent_at >= 0.12:
+            try:
+                samples = memoryview(pcm16).cast("h")[::8]
+                level = (
+                    math.sqrt(sum(sample * sample for sample in samples) / len(samples))
+                    / 32768
+                    if samples
+                    else 0.0
+                )
+            except (TypeError, ValueError):
+                level = 0.0
+            active = level >= 0.012
+            should_publish = False
+            if active:
+                source_silence_started_at = None
+                if not source_was_active:
+                    source_was_active = True
+                    should_publish = True
+            elif source_was_active:
+                if source_silence_started_at is None:
+                    source_silence_started_at = now
+                elif now - source_silence_started_at >= 0.36:
+                    source_was_active = False
+                    source_silence_started_at = None
+                    should_publish = True
+            if should_publish:
+                await manager.queue_json_to_room(
+                    room_id,
+                    {
+                        "type": "source_activity",
+                        "active": source_was_active,
+                        "level": round(min(1.0, level * 5), 2),
+                        "source_id": source_id,
+                    },
+                )
+            last_activity_sent_at = now
+
+        if manager.has_source_audio_audience(room_id):
+            source_audio_buffer.extend(pcm16)
+            # Fan out 100 ms packets: immediate enough to feel live without
+            # making every listener handle fifty websocket messages per second.
+            packet_bytes = 24000 * 2 // 10
+            while len(source_audio_buffer) >= packet_bytes:
+                packet = bytes(source_audio_buffer[:packet_bytes])
+                del source_audio_buffer[:packet_bytes]
+                await manager.queue_source_audio_to_room(
+                    room_id, packet, source_id, 24000
+                )
+        elif source_audio_buffer:
+            source_audio_buffer.clear()
+
     manager.voice_modes = getattr(manager, 'voice_modes', {})
     manager.voice_modes[manager.resolve_room_id(room_id)] = voice_mode
     logger.info(f"Speaker connected to room: {room_id} (voice_mode={voice_mode})")
@@ -237,6 +300,7 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
                 if data.get("type") == "websocket.disconnect":
                     break
                 if data.get("bytes") is not None:
+                    await publish_source_feedback(data["bytes"])
                     languages = manager.realtime_languages(room_id)
                     await realtime_hub.feed(
                         room_id, source_id, data["bytes"], languages
@@ -372,6 +436,7 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
                 data = await asyncio.wait_for(websocket.receive(), timeout=30.0)
                 if "bytes" in data:
                     audio_bytes = data["bytes"]
+                    await publish_source_feedback(audio_bytes)
                     await audio_queue.put(audio_bytes)
                 elif "text" in data:
                     try:
@@ -457,8 +522,17 @@ async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
     logger.info(f"Audience connected to room: {room_id}, lang: {lang}")
     try:
         while True:
-            # 전송 전용이므로 하트비트(ping)만 수신 대기
-            await websocket.receive_text()
+            message_text = await websocket.receive_text()
+            if message_text == "ping":
+                continue
+            try:
+                message = json.loads(message_text)
+            except ValueError:
+                continue
+            if message.get("type") == "source_audio":
+                manager.set_source_audio_enabled(
+                    websocket, bool(message.get("enabled"))
+                )
     except WebSocketDisconnect:
         logger.info(f"Audience disconnected from room: {room_id}, lang: {lang}")
         manager.remove_audience(room_id, lang, websocket)
