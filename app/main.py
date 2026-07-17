@@ -531,7 +531,13 @@ async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):
                 message = json.loads(message_text)
             except ValueError:
                 continue
-            if message.get("type") == "source_audio":
+            if message.get("type") == "quality_ping":
+                sent_at = message.get("sent_at")
+                if isinstance(sent_at, (int, float)) and not isinstance(sent_at, bool):
+                    await websocket.send_json(
+                        {"type": "quality_pong", "sent_at": sent_at}
+                    )
+            elif message.get("type") == "source_audio":
                 manager.set_source_audio_enabled(
                     websocket, bool(message.get("enabled"))
                 )

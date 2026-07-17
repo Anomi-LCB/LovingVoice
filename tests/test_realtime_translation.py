@@ -236,7 +236,11 @@ async def test_translation_session_uses_low_latency_input_configuration(monkeypa
         pass
 
     session = OpenAITranslationSession(
-        "en", ignore, api_key="test-key", model="gpt-realtime-translate"
+        "en",
+        ignore,
+        api_key="test-key",
+        model="gpt-realtime-translate",
+        safety_identifier="hashed-speaker-id",
     )
     await session._run_connection()
 
@@ -246,6 +250,9 @@ async def test_translation_session_uses_low_latency_input_configuration(monkeypa
     assert input_audio["noise_reduction"]["type"] == "near_field"
     assert update["session"]["audio"]["output"]["language"] == "en"
     assert connection_options["compression"] is None
+    assert connection_options["additional_headers"]["OpenAI-Safety-Identifier"] == (
+        "hashed-speaker-id"
+    )
 
 
 @pytest.mark.asyncio

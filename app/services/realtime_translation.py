@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import math
@@ -57,11 +58,13 @@ class OpenAITranslationSession:
         *,
         api_key: str,
         model: str = "gpt-realtime-translate",
+        safety_identifier: str = "lovingvoice-session",
     ) -> None:
         self.target_language = target_language
         self.on_event = on_event
-        self.api_key = api_key
+        self.api_key = api_key.strip()
         self.model = model
+        self.safety_identifier = safety_identifier
         # Keep only a short window of 20 ms input frames. Live interpretation is
         # more useful with a tiny discontinuity than audio replayed seconds late.
         backlog_ms = max(
@@ -158,7 +161,7 @@ class OpenAITranslationSession:
         )
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "OpenAI-Safety-Identifier": "lovingvoice-server",
+            "OpenAI-Safety-Identifier": self.safety_identifier,
         }
         async with websockets.connect(
             uri,
@@ -282,7 +285,7 @@ class RealtimeTranslationHub:
         api_key: str | None = None,
         model: str | None = None,
     ) -> None:
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
+        self.api_key = (api_key or os.getenv("OPENAI_API_KEY", "")).strip()
         self.model = model or os.getenv(
             "OPENAI_REALTIME_MODEL", "gpt-realtime-translate"
         )
@@ -393,6 +396,9 @@ class RealtimeTranslationHub:
                     on_event,
                     api_key=self.api_key,
                     model=self.model,
+                    safety_identifier=hashlib.sha256(
+                        f"lovingvoice:{room_id}:{source_id}".encode("utf-8")
+                    ).hexdigest(),
                 )
                 self.sessions[(room_id, source_id, language)] = session
                 session.start()
