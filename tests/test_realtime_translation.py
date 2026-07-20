@@ -1,10 +1,12 @@
 import base64
 import json
+from pathlib import Path
 
 import pytest
 
 from app.services.realtime_translation import (
     LANGUAGE_CODES,
+    OpenAIGeneralTranslationSession,
     OpenAITranslationSession,
     RealtimeTranslationHub,
 )
@@ -116,10 +118,100 @@ def test_supported_ui_languages_map_to_openai_language_codes():
         "id-ID",
         "it-IT",
         "vi-VN",
+        "fil-PH",
     ):
         assert language in LANGUAGE_CODES
 
-    assert len(set(LANGUAGE_CODES.values())) == 13
+    assert LANGUAGE_CODES["fil-PH"] == "tl"
+    assert len(set(LANGUAGE_CODES.values())) == 14
+
+
+def test_tagalog_is_available_in_audience_language_picker():
+    page = Path("app/templates/index.html").read_text(encoding="utf-8")
+    assert 'option value="fil-PH"' in page
+    assert "Tagalog / Filipino (필리핀어)" in page
+
+
+def test_tagalog_uses_prompted_general_realtime_protocol():
+    async def ignore(event):
+        pass
+
+    session = OpenAIGeneralTranslationSession(
+        "tl",
+        ignore,
+        api_key="test-key",
+        model="gpt-realtime-2.1",
+        target_language_name="Tagalog (Filipino)",
+    )
+
+    assert session._connection_uri().endswith("model=gpt-realtime-2.1")
+    update = session._session_update_event()
+    assert update["session"]["output_modalities"] == ["audio"]
+    assert "Tagalog (Filipino)" in update["session"]["instructions"]
+    assert update["session"]["audio"]["input"]["format"] == {
+        "type": "audio/pcm",
+        "rate": 24000,
+    }
+    assert update["session"]["audio"]["output"]["format"] == {
+        "type": "audio/pcm",
+        "rate": 24000,
+    }
+    assert update["session"]["audio"]["input"]["turn_detection"][
+        "create_response"
+    ] is True
+    assert session._audio_append_event(b"\x00\x01")["type"] == (
+        "input_audio_buffer.append"
+    )
+    assert session._normalize_server_event(
+        {"type": "response.output_audio.delta", "delta": "AA=="}
+    )["type"] == "session.output_audio.delta"
+    assert session._normalize_server_event(
+        {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "transcript": "Hello",
+        }
+    )["type"] == "session.input_transcript.done"
+
+
+@pytest.mark.asyncio
+async def test_tagalog_listeners_share_one_general_realtime_route(monkeypatch):
+    created = []
+
+    class FakeGeneralSession:
+        def __init__(self, target_language, on_event, **kwargs):
+            self.target_language = target_language
+            self.kwargs = kwargs
+            created.append(self)
+
+        def start(self):
+            pass
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "app.services.realtime_translation.OpenAIGeneralTranslationSession",
+        FakeGeneralSession,
+    )
+
+    async def ignore(*args):
+        pass
+
+    hub = RealtimeTranslationHub(
+        ignore,
+        ignore,
+        api_key="test-key",
+        general_realtime_model="gpt-realtime-2.1",
+    )
+    listeners = ["fil-PH"] * 1000
+    await hub._sync_languages("room", "source", listeners)
+    await hub._sync_languages("room", "source", listeners)
+
+    assert hub.active_session_count == 1
+    assert len(created) == 1
+    assert created[0].target_language == "tl"
+    assert created[0].kwargs["model"] == "gpt-realtime-2.1"
+    assert created[0].kwargs["target_language_name"] == "Tagalog (Filipino)"
 
 
 @pytest.mark.asyncio

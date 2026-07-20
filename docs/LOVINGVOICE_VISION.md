@@ -8,10 +8,11 @@ LovingVoice는 단순한 AI 번역기가 아니라 **한 사람의 음성을 현
 2. 같은 언어의 청중은 하나의 실시간 번역 경로를 공유한다.
 3. 청중은 현재 자막, 최근 맥락, 번역 음성을 지연 없이 받는다.
 
-현재 전송 구조는 OpenAI가 안내하는 listen-along 패턴과 같은 방향이다. 전용 `gpt-realtime-translate` 모델과 `/v1/realtime/translations` 경로를 사용하고, 목표 언어별 세션 하나를 공유한다. 일반 대화 모델로 교체하는 것보다 이 전용 경로를 더 정확히 운영하는 것이 우선이다.
+현재 강연 전송 구조는 OpenAI가 안내하는 listen-along 패턴과 같은 방향이다. 기본 13개 출력 언어는 전용 `gpt-realtime-translate` 모델과 `/v1/realtime/translations` 경로를 사용하고, 목표 언어별 세션 하나를 공유한다. 전용 모델의 출력 목록에 아직 없는 타갈로그어는 OpenAI의 Realtime API 통역 패턴에 따라 `gpt-realtime-2.1` 전용 세션으로 보완한다.
 
 - [OpenAI Realtime translation guide](https://developers.openai.com/api/docs/guides/realtime-translation)
 - [OpenAI listen-along reference architecture](https://developers.openai.com/cookbook/examples/voice_solutions/realtime_translation_guide)
+- [OpenAI Realtime API one-way translation pattern](https://developers.openai.com/cookbook/examples/voice_solutions/one_way_translation_using_realtime_api)
 
 ## 이번에 적용한 1차 혁신 패키지
 
@@ -21,6 +22,8 @@ LovingVoice는 단순한 AI 번역기가 아니라 **한 사람의 음성을 현
 - **개인정보 최소 안전 식별자**: 이름·이메일 대신 방과 음원 세션을 단방향 해시한 식별자를 OpenAI 세션에 전달한다.
 - **오디오 전용 로컬 녹음**: 탭 공유를 선택해도 비디오 트랙을 서버나 녹음 파일에 넣지 않고 오디오와 강연자 자막만 저장한다.
 - **운영 비밀 분리**: OpenAI·Gemini 키와 방 서명 비밀은 Cloud Run 일반 환경변수 값이 아니라 Google Secret Manager의 고정 버전으로 주입한다.
+- **1인 동시통역**: 방이나 두 번째 기기 없이 한 WebSocket에서 마이크 입력, 번역 자막, 번역 음성을 함께 처리한다. 언어 뒤바꾸기는 목표 언어 세션을 교체하고 이전 음성 대기열을 비워 현지 대화를 빠르게 왕복한다.
+- **같은 기기 에코 보호**: 마이크에 브라우저 에코 제거·소음 억제·자동 게인을 적용하고, 이어폰 사용 시 말이 끝나기 전부터 시작되는 초저지연 번역을 가장 안정적으로 유지한다.
 
 ## 반드시 해결할 기반 구조
 

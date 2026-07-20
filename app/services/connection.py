@@ -95,10 +95,13 @@ class ConnectionManager:
         if accept:
             await websocket.accept()
 
-    def remove_audience(self, room_id, lang, websocket):
+    def remove_audience(
+        self, room_id, lang, websocket, *, preserve_transport=False
+    ):
         room_id = self.resolve_room_id(room_id)
-        self.audience_audio_transports.pop(id(websocket), None)
-        self.source_audio_audiences.discard(id(websocket))
+        if not preserve_transport:
+            self.audience_audio_transports.pop(id(websocket), None)
+            self.source_audio_audiences.discard(id(websocket))
         try:
             if room_id in self.active_connections and lang in self.active_connections[room_id]:
                 self.active_connections[room_id][lang].remove(websocket)

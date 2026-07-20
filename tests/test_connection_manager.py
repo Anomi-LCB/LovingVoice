@@ -84,6 +84,36 @@ async def test_same_language_audiences_share_one_language_channel():
 
 
 @pytest.mark.asyncio
+async def test_language_switch_preserves_negotiated_binary_transport():
+    manager = ConnectionManager()
+    audience = FakeAudience()
+
+    await manager.add_audience(
+        "solo-room", "en-US", audience, audio_transport="pcm16-v1"
+    )
+    await manager.add_audience(
+        "solo-room", "ko-KR", audience, accept=False, audio_transport="pcm16-v1"
+    )
+    manager.remove_audience(
+        "solo-room", "en-US", audience, preserve_transport=True
+    )
+
+    await manager.broadcast_json_to_language(
+        "solo-room",
+        "ko-KR",
+        {
+            "type": "audio_delta",
+            "audio": base64.b64encode(b"\x01\x00").decode("ascii"),
+            "sample_rate": 24000,
+            "source_id": "solo-source",
+        },
+    )
+
+    assert audience.binary_messages[0][:4] == b"LV01"
+    assert manager.audience_audio_transports[id(audience)] == "pcm16-v1"
+
+
+@pytest.mark.asyncio
 async def test_negotiated_pcm_audio_uses_compact_binary_frame_with_json_fallback():
     manager = ConnectionManager()
     binary_audience = FakeAudience()

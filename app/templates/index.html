@@ -78,11 +78,11 @@
         .screen { width: 100%; }
         .role-screen { min-height: calc(100vh - 128px); display: grid; place-items: center; }
         .role-screen.hidden, .screen.hidden { display: none; }
-        .role-wrap { width: min(100%, 900px); }
+        .role-wrap { width: min(100%, 1080px); }
         .brand-block { text-align: center; margin-bottom: 40px; }
         .brand-name { margin: 0; color: #2563eb; font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 800; letter-spacing: -0.04em; }
         .brand-copy { max-width: 620px; margin: 14px auto 0; color: #475569; font-size: clamp(1rem, 2vw, 1.18rem); line-height: 1.65; }
-        .role-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+        .role-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
         .role-card { min-height: 250px; padding: 30px; border-radius: 24px; border: 1px solid #dbe3ef; background: rgba(255,255,255,.9); color: #172033; text-align: left; box-shadow: 0 18px 50px rgba(15,23,42,.08); transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
         .role-card:hover { transform: translateY(-3px); border-color: #93b4f8; box-shadow: 0 24px 60px rgba(37,99,235,.13); }
         .role-card:focus-visible { outline: 3px solid rgba(59,130,246,.35); outline-offset: 3px; }
@@ -116,6 +116,13 @@
         .audience-form-fields .form-control { width: 100%; max-width: 100%; box-sizing: border-box; }
         .password-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 7px 9px; border: 0; border-radius: 8px; background: transparent; color: #64748b; font-size: .78rem; font-weight: 750; }
         .password-toggle:hover { background: #f1f5f9; color: #2563eb; }
+        .language-direction { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: end; }
+        .language-direction .field-group { margin-top: 0; }
+        .language-swap-button { display: grid; width: 48px; height: 48px; place-items: center; border: 1px solid #bfdbfe; border-radius: 14px; background: #eff6ff; color: #1d4ed8; font-size: 1.35rem; font-weight: 900; transition: transform 160ms ease, background-color 160ms ease; }
+        .language-swap-button:hover { transform: rotate(180deg); background: #dbeafe; }
+        .language-swap-button:focus-visible { outline: 3px solid rgba(59,130,246,.25); outline-offset: 2px; }
+        .solo-direction-preview { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 24px 0 0; padding: 14px 16px; border: 1px solid #dbeafe; border-radius: 16px; background: #eff6ff; color: #1e40af; font-weight: 850; }
+        .solo-direction-arrow { color: #60a5fa; }
         .form-error { min-height: 22px; margin: 14px 0 0; color: #dc2626; font-size: .86rem; font-weight: 650; line-height: 1.5; }
         .button-row { display: flex; gap: 12px; margin-top: 24px; }
         .primary-button, .secondary-button { min-height: 50px; padding: 0 20px; border-radius: 13px; font-weight: 800; transition: transform 150ms ease, background-color 150ms ease, opacity 150ms ease; }
@@ -164,8 +171,10 @@
             from { opacity: 0; transform: translateY(14px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .host-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; padding: 16px; border-radius: 18px; }
-        .host-controls.hidden { display: none; }
+        .host-controls, .solo-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; padding: 16px; border-radius: 18px; }
+        .host-controls.hidden, .solo-controls.hidden { display: none; }
+        .solo-session-direction { display: flex; width: 100%; align-items: center; justify-content: center; gap: 10px; margin: 0 0 4px; color: #1d4ed8; font-weight: 850; }
+        .solo-note { width: 100%; margin: 3px 0 0; text-align: center; color: #64748b; font-size: .78rem; line-height: 1.5; }
         .control-button { min-height: 44px; padding: 0 16px; border-radius: 11px; background: #e2e8f0; color: #243047; font-weight: 780; }
         .control-button.with-icon { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
         .lucide-mic-icon { width: 18px; height: 18px; flex: 0 0 auto; background: currentColor; -webkit-mask: url('https://unpkg.com/lucide-static@1.24.0/icons/mic.svg') center / contain no-repeat; mask: url('https://unpkg.com/lucide-static@1.24.0/icons/mic.svg') center / contain no-repeat; }
@@ -197,7 +206,7 @@
         .share-button.social { background: #2563eb; color: #fff; }
         .share-button:hover { filter: brightness(.97); }
         .copy-status { min-height: 20px; margin: 10px 0 0; color: #16a34a; font-size: .82rem; }
-        html[data-theme="dark"] .brand-copy, html[data-theme="dark"] .role-description, html[data-theme="dark"] .form-copy, html[data-theme="dark"] .field-help, html[data-theme="dark"] .support-copy, html[data-theme="dark"] .support-list, html[data-theme="dark"] .recording-note, html[data-theme="dark"] .caption-meta, html[data-theme="dark"] .step-label { color: #94a3b8; }
+        html[data-theme="dark"] .brand-copy, html[data-theme="dark"] .role-description, html[data-theme="dark"] .form-copy, html[data-theme="dark"] .field-help, html[data-theme="dark"] .support-copy, html[data-theme="dark"] .support-list, html[data-theme="dark"] .recording-note, html[data-theme="dark"] .solo-note, html[data-theme="dark"] .caption-meta, html[data-theme="dark"] .step-label { color: #94a3b8; }
         html[data-theme="dark"] .role-card, html[data-theme="dark"] .form-control, html[data-theme="dark"] .session-chip, html[data-theme="dark"] .session-action { border-color: #475569; background: #1e293b; color: #f8fafc; }
         html[data-theme="dark"] .role-card:hover { border-color: #60a5fa; box-shadow: 0 24px 60px rgba(0,0,0,.25); }
         html[data-theme="dark"] .role-index { background: #1e3a8a; color: #bfdbfe; }
@@ -217,6 +226,9 @@
         html[data-theme="dark"] .quality-chip.good { border-color: #166534; background: #052e16; color: #86efac; }
         html[data-theme="dark"] .quality-chip.warn { border-color: #854d0e; background: #422006; color: #fde68a; }
         html[data-theme="dark"] .quality-chip.bad { border-color: #991b1b; background: #450a0a; color: #fecaca; }
+        html[data-theme="dark"] .language-swap-button, html[data-theme="dark"] .solo-direction-preview { border-color: #1e40af; background: #172554; color: #bfdbfe; }
+        html[data-theme="dark"] .language-swap-button:hover { background: #1e3a8a; }
+        html[data-theme="dark"] .solo-session-direction { color: #93c5fd; }
         @media (prefers-reduced-motion: reduce) {
             .history-caption { animation: none; }
         }
@@ -229,6 +241,7 @@
             .role-screen { min-height: calc(100vh - 100px); align-items: start; padding-top: 38px; }
             .brand-block { margin-bottom: 28px; }
             .role-grid, .setup-layout { grid-template-columns: 1fr; }
+            .language-direction { grid-template-columns: 1fr auto 1fr; }
             .role-card { min-height: 190px; padding: 24px; }
             .role-title { margin-top: 20px; }
             .role-description { min-height: 0; }
@@ -238,10 +251,16 @@
             .session-actions { width: 100%; justify-content: flex-start; }
             .caption-stage { height: calc(100vh - 230px); min-height: 450px; padding: 14px 10px; }
             .host-controls { justify-content: stretch; }
+            .solo-controls { justify-content: stretch; }
             .control-button { flex: 1 1 calc(50% - 8px); }
             .invite-content { grid-template-columns: 1fr; }
             .invite-grid { grid-template-columns: 1fr; }
             .invite-share-actions { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 520px) {
+            .language-direction { grid-template-columns: 1fr; }
+            .language-swap-button { width: 100%; }
+            .language-swap-button:hover { transform: none; }
         }
         .pulse-red { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -268,6 +287,12 @@
                         <span class="role-title">청중 입장</span>
                         <span class="role-description">초대받은 방에 입장해 원하는 언어로 실시간 통역을 듣습니다.</span>
                         <span class="role-action">방에 입장하기</span>
+                    </button>
+                    <button type="button" class="role-card" onclick="openRoleScreen('solo')">
+                        <span class="role-index">03</span>
+                        <span class="role-title">1인 통역</span>
+                        <span class="role-description">한 기기에서 말하고 바로 번역 음성과 자막을 받으며, 언어 방향을 즉시 뒤바꿉니다.</span>
+                        <span class="role-action">바로 통역하기</span>
                     </button>
                 </div>
             </div>
@@ -363,6 +388,7 @@
                             <option value="id-ID">Bahasa Indonesia</option>
                             <option value="it-IT">Italiano</option>
                             <option value="vi-VN">Tiếng Việt (베트남어)</option>
+                            <option value="fil-PH">Tagalog / Filipino (필리핀어)</option>
                         </select>
                         <p class="field-help">같은 언어를 선택한 청중은 하나의 번역 채널을 공유합니다.</p>
                     </div>
@@ -371,6 +397,68 @@
                 <div class="button-row">
                     <button id="audience_join_button" class="primary-button" type="submit">통역방 입장</button>
                 </div>
+            </form>
+        </section>
+
+        <section id="solo_setup_screen" class="screen setup-screen hidden">
+            <header class="screen-header audience-card">
+                <button type="button" class="back-button" onclick="showScreen('role_screen'); currentRole = ''">← 처음으로</button>
+                <span class="step-label">1인 · 현장 대화 통역</span>
+            </header>
+            <form class="glass form-card audience-card" onsubmit="event.preventDefault(); startSoloInterpreter();">
+                <h2 class="form-title">1인 동시통역</h2>
+                <p class="form-copy">말하는 언어와 들을 언어를 정하면 이 기기 하나가 마이크와 통역기로 동시에 작동합니다.</p>
+                <div class="language-direction">
+                    <div class="field-group">
+                        <label class="field-label" for="solo_source_lang">말하는 언어</label>
+                        <select id="solo_source_lang" class="form-control" onchange="updateSoloSetupPreview()">
+                            <option value="ko-KR" selected>한국어</option>
+                            <option value="en-US">English</option>
+                            <option value="zh-CN">中文</option>
+                            <option value="ja-JP">日本語</option>
+                            <option value="es-ES">Español</option>
+                            <option value="pt-BR">Português</option>
+                            <option value="fr-FR">Français</option>
+                            <option value="de-DE">Deutsch</option>
+                            <option value="ru-RU">Русский</option>
+                            <option value="hi-IN">हिन्दी</option>
+                            <option value="id-ID">Bahasa Indonesia</option>
+                            <option value="it-IT">Italiano</option>
+                            <option value="vi-VN">Tiếng Việt</option>
+                            <option value="fil-PH">Tagalog / Filipino</option>
+                        </select>
+                    </div>
+                    <button type="button" class="language-swap-button" onclick="swapSoloSetupLanguages()" aria-label="말하는 언어와 들을 언어 뒤바꾸기" title="언어 뒤바꾸기">⇄</button>
+                    <div class="field-group">
+                        <label class="field-label" for="solo_target_lang">들을 언어</label>
+                        <select id="solo_target_lang" class="form-control" onchange="updateSoloSetupPreview()">
+                            <option value="ko-KR">한국어</option>
+                            <option value="en-US" selected>English</option>
+                            <option value="zh-CN">中文</option>
+                            <option value="ja-JP">日本語</option>
+                            <option value="es-ES">Español</option>
+                            <option value="pt-BR">Português</option>
+                            <option value="fr-FR">Français</option>
+                            <option value="de-DE">Deutsch</option>
+                            <option value="ru-RU">Русский</option>
+                            <option value="hi-IN">हिन्दी</option>
+                            <option value="id-ID">Bahasa Indonesia</option>
+                            <option value="it-IT">Italiano</option>
+                            <option value="vi-VN">Tiếng Việt</option>
+                            <option value="fil-PH">Tagalog / Filipino</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="solo-direction-preview" aria-live="polite">
+                    <span id="solo_setup_source_label">한국어</span>
+                    <span class="solo-direction-arrow">→</span>
+                    <span id="solo_setup_target_label">English</span>
+                </div>
+                <p id="solo_form_error" class="form-error" role="alert"></p>
+                <div class="button-row">
+                    <button id="solo_start_button" class="primary-button" type="submit">1인 통역 시작</button>
+                </div>
+                <p class="field-help">스피커로도 사용할 수 있도록 에코·소음 억제를 적용합니다. 가장 선명한 동시통역은 이어폰 사용을 권장합니다.</p>
             </form>
         </section>
 
@@ -423,6 +511,20 @@
                 <button type="button" onclick="sendTestAudio()" class="control-button">연결 테스트</button>
                 <button type="button" onclick="leaveSession('home')" class="control-button danger">방송 종료</button>
                 <p id="recording_status" class="recording-note">원본 음성과 자막 텍스트는 이 기기에서만 저장됩니다.</p>
+            </div>
+            <div id="solo_controls" class="solo-controls glass hidden">
+                <div class="solo-session-direction" aria-live="polite">
+                    <span id="solo_source_label">한국어</span>
+                    <span class="solo-direction-arrow">→</span>
+                    <span id="solo_target_label">English</span>
+                </div>
+                <button id="solo_swap_button" type="button" onclick="swapSoloLanguages()" class="control-button primary">⇄ 언어 뒤바꾸기</button>
+                <button id="solo_mute_button" type="button" onclick="toggleMute()" class="control-button with-icon" aria-pressed="false" title="마이크 음소거">
+                    <span id="solo_mute_icon" class="lucide-mic-icon" aria-hidden="true"></span>
+                    <span id="solo_mute_label">마이크 음소거</span>
+                </button>
+                <button type="button" onclick="leaveSession('solo')" class="control-button danger">통역 종료</button>
+                <p class="solo-note">대화 상대가 말할 때는 언어 뒤바꾸기를 누르세요. 전환 중에는 이전 언어 음성이 즉시 정리됩니다.</p>
             </div>
         </section>
     </main>
@@ -519,6 +621,15 @@
         let currentRole = '';
         let speakerCaptionDisplay = null;
         const speakerTranscripts = new Map();
+        let soloCaptionDisplay = null;
+        let soloSourceLanguage = 'ko-KR';
+        let soloTargetLanguage = 'en-US';
+        let soloReady = false;
+        let soloSwitching = false;
+        let soloSwitchTimer = null;
+        const soloTranslations = new Map();
+        const soloSourceTranscripts = new Map();
+        const soloActivitySources = new Set();
         let isLeaving = false;
         let speakerAuthenticated = false;
         let isMuted = false;
@@ -579,6 +690,9 @@
                 }
                 return stream;
             }
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error('이 브라우저는 마이크 입력을 지원하지 않습니다. 최신 Chrome, Edge 또는 Safari를 사용해주세요.');
+            }
             return navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
@@ -609,7 +723,7 @@
 
         function updateQualityBadge() {
             const badge = document.getElementById('quality_badge');
-            if (!badge || currentRole !== 'audience') return;
+            if (!badge || !['audience', 'solo'].includes(currentRole)) return;
             const networkText = Number.isFinite(networkRttMs) ? `연결 ${Math.round(networkRttMs)}ms` : '연결 측정 중';
             const translationText = Number.isFinite(translationStartLatencyMs)
                 ? `첫 통역 ${(translationStartLatencyMs / 1000).toFixed(1)}초`
@@ -624,7 +738,7 @@
         }
 
         function markTranslationAudioStarted(sourceId = 'default') {
-            if (currentRole !== 'audience') return;
+            if (!['audience', 'solo'].includes(currentRole)) return;
             const startedAt = sourceSpeechStartedAt.get(sourceId);
             if (!Number.isFinite(startedAt)) return;
             const measured = Math.max(0, performance.now() - startedAt);
@@ -674,10 +788,38 @@
         function openRoleScreen(role) {
             currentRole = role;
             clearFormError(role);
-            showScreen(role === 'host' ? 'host_setup_screen' : 'audience_setup_screen');
+            const screens = {
+                host: 'host_setup_screen',
+                audience: 'audience_setup_screen',
+                solo: 'solo_setup_screen'
+            };
+            showScreen(screens[role] || 'role_screen');
             setTimeout(() => {
-                document.getElementById(role === 'host' ? 'host_room_id' : 'audience_room_id')?.focus();
+                const focusTargets = {
+                    host: 'host_room_id',
+                    audience: 'audience_room_id',
+                    solo: 'solo_source_lang'
+                };
+                document.getElementById(focusTargets[role])?.focus();
             }, 0);
+        }
+
+        function selectedLanguageLabel(selectId) {
+            const select = document.getElementById(selectId);
+            return select?.options[select.selectedIndex]?.text || select?.value || '';
+        }
+
+        function updateSoloSetupPreview() {
+            document.getElementById('solo_setup_source_label').innerText = selectedLanguageLabel('solo_source_lang');
+            document.getElementById('solo_setup_target_label').innerText = selectedLanguageLabel('solo_target_lang');
+            clearFormError('solo');
+        }
+
+        function swapSoloSetupLanguages() {
+            const source = document.getElementById('solo_source_lang');
+            const target = document.getElementById('solo_target_lang');
+            [source.value, target.value] = [target.value, source.value];
+            updateSoloSetupPreview();
         }
 
         function clearAudienceInviteUrl() {
@@ -805,7 +947,12 @@
 
         function toggleSourceAudioAssist() {
             if (currentRole !== 'audience') return;
-            primePlaybackContext();
+            try {
+                primePlaybackContext();
+            } catch (error) {
+                setFormError('solo', '이 브라우저에서는 실시간 음성 재생을 시작할 수 없습니다. 최신 브라우저를 사용해주세요.');
+                return;
+            }
             setSourceAssistEnabled(!sourceAssistEnabled);
         }
 
@@ -817,6 +964,7 @@
             activeUI.dataset.role = currentRole;
             showScreen('active_ui');
             document.getElementById('speaker_controls').classList.toggle('hidden', !isSpeaker);
+            document.getElementById('solo_controls').classList.add('hidden');
             document.getElementById('invite_button').classList.toggle('hidden', !isSpeaker);
             document.getElementById('room_settings_button').classList.toggle('hidden', !isSpeaker);
             document.getElementById('source_audio_toggle').classList.toggle('hidden', isSpeaker);
@@ -830,6 +978,7 @@
             setSourceAssistEnabled(false, { notifyServer: false });
             document.getElementById('session_role_label').innerText = isSpeaker ? '강연자 방송' : '청중 통역';
             document.getElementById('room_display').innerText = '방: ' + currentRoom;
+            document.getElementById('room_display').classList.remove('hidden');
             document.getElementById('subtitle_area').innerText = isSpeaker
                 ? '강연을 시작하면 청중에게 실시간 통역이 전송됩니다.'
                 : '강연자의 다음 실시간 통역을 기다리는 중…';
@@ -846,6 +995,79 @@
             delete historyBox.dataset.followLatest;
             document.getElementById('history_jump_button').classList.add('hidden');
             if (isSpeaker) initializeSpeakerCaptions();
+        }
+
+        function appendSoloHistory(text) {
+            if (!text || text.includes('동시 통역 중')) return;
+            const history = document.getElementById('history_area');
+            const item = document.createElement('p');
+            item.className = 'history-caption-line history-caption border-l-2 border-slate-600 pl-3';
+            item.setAttribute('role', 'listitem');
+            item.innerText = text;
+            history.appendChild(item);
+            while (history.childElementCount > AUDIENCE_HISTORY_MAX_ITEMS) {
+                history.firstElementChild?.remove();
+            }
+            requestAnimationFrame(() => scrollToLatestCaption({ behavior: 'smooth' }));
+        }
+
+        function initializeSoloCaptions({ clearHistory = false } = {}) {
+            soloCaptionDisplay?.dispose();
+            soloTranslations.clear();
+            soloSourceTranscripts.clear();
+            soloActivitySources.clear();
+            const history = document.getElementById('history_area');
+            if (clearHistory) history.replaceChildren();
+            soloCaptionDisplay = createCaptionDisplayController(
+                document.getElementById('subtitle_area'),
+                appendSoloHistory
+            );
+        }
+
+        function updateSoloDirectionUI() {
+            const sourceSelect = document.getElementById('solo_source_lang');
+            const targetSelect = document.getElementById('solo_target_lang');
+            sourceSelect.value = soloSourceLanguage;
+            targetSelect.value = soloTargetLanguage;
+            const sourceLabel = selectedLanguageLabel('solo_source_lang');
+            const targetLabel = selectedLanguageLabel('solo_target_lang');
+            document.getElementById('solo_source_label').innerText = sourceLabel;
+            document.getElementById('solo_target_label').innerText = targetLabel;
+            document.getElementById('route_badge').innerText = `${sourceLabel} → ${targetLabel}`;
+            updateSoloSetupPreview();
+        }
+
+        function showSoloActiveUI() {
+            currentRole = 'solo';
+            currentRoom = '';
+            currentRoomPassword = '';
+            const activeUI = document.getElementById('active_ui');
+            activeUI.dataset.role = 'solo';
+            showScreen('active_ui');
+            document.getElementById('speaker_controls').classList.add('hidden');
+            document.getElementById('solo_controls').classList.remove('hidden');
+            document.getElementById('invite_button').classList.add('hidden');
+            document.getElementById('room_settings_button').classList.add('hidden');
+            document.getElementById('source_audio_toggle').classList.add('hidden');
+            document.getElementById('quality_badge').classList.remove('hidden');
+            document.getElementById('room_display').classList.add('hidden');
+            document.getElementById('session_role_label').innerText = '1인 동시통역';
+            document.getElementById('recent_history_label').innerText = `지난 자막 · 최대 ${AUDIENCE_HISTORY_MAX_ITEMS}줄`;
+            document.getElementById('current_caption_label').innerText = '현재 통역';
+            document.getElementById('source_preview_area').classList.add('hidden');
+            document.getElementById('subtitle_area').innerText = '마이크 연결 후 바로 말해보세요.';
+            const history = document.getElementById('history_area');
+            history.onscroll = null;
+            delete history.dataset.historyKey;
+            document.getElementById('history_jump_button').classList.add('hidden');
+            networkRttMs = null;
+            translationStartLatencyMs = null;
+            sourceSpeechStartedAt.clear();
+            updateSoloDirectionUI();
+            initializeSoloCaptions({ clearHistory: true });
+            updateQualityBadge();
+            updateMuteButton();
+            requestSessionWakeLock();
         }
 
         function scrollToLatestCaption({ behavior = 'smooth' } = {}) {
@@ -1160,18 +1382,32 @@
             const icon = document.getElementById('mute_icon');
             const sourceLabel = activeSpeakerSourceMode === 'display' ? '탭 오디오' : '마이크';
             const nextAction = isMuted ? `${sourceLabel} 켜기` : `${sourceLabel} 음소거`;
-            label.innerText = nextAction;
-            icon.classList.toggle('off', isMuted);
-            button.setAttribute('aria-pressed', String(isMuted));
-            button.setAttribute('aria-label', nextAction);
-            button.title = nextAction;
+            if (label) label.innerText = nextAction;
+            icon?.classList.toggle('off', isMuted);
+            button?.setAttribute('aria-pressed', String(isMuted));
+            button?.setAttribute('aria-label', nextAction);
+            if (button) button.title = nextAction;
+
+            const soloButton = document.getElementById('solo_mute_button');
+            const soloLabel = document.getElementById('solo_mute_label');
+            const soloIcon = document.getElementById('solo_mute_icon');
+            const soloAction = isMuted ? '마이크 켜기' : '마이크 음소거';
+            if (soloLabel) soloLabel.innerText = soloAction;
+            soloIcon?.classList.toggle('off', isMuted);
+            soloButton?.setAttribute('aria-pressed', String(isMuted));
+            soloButton?.setAttribute('aria-label', soloAction);
+            if (soloButton) soloButton.title = soloAction;
         }
 
         function toggleMute() {
-            if (currentRole !== 'host' || !micStream) return;
+            if (!['host', 'solo'].includes(currentRole) || !micStream) return;
             isMuted = !isMuted;
             micStream.getAudioTracks().forEach(track => { track.enabled = !isMuted; });
             updateMuteButton();
+            if (currentRole === 'solo') {
+                setStatus('online', isMuted ? '1인 통역 중 · 마이크 꺼짐' : '1인 통역 중 · 마이크 켜짐');
+                return;
+            }
             const sourceLabel = activeSpeakerSourceMode === 'display' ? '탭 오디오' : '마이크';
             setStatus('online', isMuted ? `방송 중 · ${sourceLabel} 꺼짐` : `방송 중 · ${sourceLabel} 켜짐`);
         }
@@ -1386,11 +1622,19 @@
         async function leaveSession(returnScreen = 'home') {
             isLeaving = true;
             speakerAuthenticated = false;
+            soloReady = false;
+            soloSwitching = false;
+            clearTimeout(soloSwitchTimer);
             closeInviteModal();
             closeRoomSettings();
             speakerCaptionDisplay?.dispose();
             speakerCaptionDisplay = null;
             speakerTranscripts.clear();
+            soloCaptionDisplay?.dispose();
+            soloCaptionDisplay = null;
+            soloTranslations.clear();
+            soloSourceTranscripts.clear();
+            soloActivitySources.clear();
             clearTimeout(reconnectTimer);
             clearInterval(heartbeatTimer);
             await releaseSessionWakeLock();
@@ -1417,6 +1661,7 @@
                 audioCtx = null;
             }
             if (playbackCtx) {
+                stopAllScheduledPlayback();
                 await playbackCtx.close().catch(() => {});
                 playbackCtx = null;
             }
@@ -1470,6 +1715,8 @@
             updateMuteButton();
             document.getElementById('active_ui').classList.add('hidden');
             document.getElementById('speaker_controls').classList.add('hidden');
+            document.getElementById('solo_controls').classList.add('hidden');
+            document.getElementById('room_display').classList.remove('hidden');
             const historyBox = document.getElementById('history_area');
             historyBox.onscroll = null;
             delete historyBox.dataset.followLatest;
@@ -1485,6 +1732,10 @@
             } else if (returnScreen === 'audience') {
                 currentRole = 'audience';
                 showScreen('audience_setup_screen');
+            } else if (returnScreen === 'solo') {
+                currentRole = 'solo';
+                showScreen('solo_setup_screen');
+                updateSoloSetupPreview();
             } else {
                 currentRole = '';
                 showScreen('role_screen');
@@ -1492,7 +1743,9 @@
         }
 
         function exitSession() {
-            return leaveSession(currentRole === 'audience' ? 'audience' : 'home');
+            if (currentRole === 'audience') return leaveSession('audience');
+            if (currentRole === 'solo') return leaveSession('solo');
+            return leaveSession('home');
         }
 
         function installPlaybackUnlockFallback() {
@@ -1945,6 +2198,242 @@
                 promotePendingCaption,
                 dispose
             };
+        }
+
+        function stopAllScheduledPlayback() {
+            scheduledPlaybackSources.forEach(items => {
+                items.forEach(item => {
+                    try { item.source.stop(); } catch (error) {}
+                });
+            });
+            scheduledPlaybackSources.clear();
+            nextPlaybackTimes.clear();
+            translationAudioActiveUntil = 0;
+            updateSourceAssistDucking();
+        }
+
+        function handleSoloTranslationEvent(data) {
+            const sourceId = data.source_id || 'default';
+            const sourcePreviewArea = document.getElementById('source_preview_area');
+            const showSource = text => {
+                sourcePreviewArea.innerText = text;
+                sourcePreviewArea.classList.remove('hidden');
+            };
+            const hideSource = () => {
+                sourcePreviewArea.innerText = '';
+                sourcePreviewArea.classList.add('hidden');
+            };
+
+            if (data.type === 'source_activity') {
+                if (data.active && !soloTranslations.has(sourceId)) {
+                    if (!sourceSpeechStartedAt.has(sourceId)) sourceSpeechStartedAt.set(sourceId, performance.now());
+                    if (!soloActivitySources.has(sourceId)) {
+                        soloActivitySources.add(sourceId);
+                        soloCaptionDisplay?.startCaption();
+                    }
+                    if (!soloSourceTranscripts.has(sourceId)) showSource('원문을 듣는 중…');
+                    soloCaptionDisplay?.updateCaption('동시 통역 중…', { sourcePreview: true });
+                }
+            } else if (data.type === 'transcript_delta') {
+                if (!soloSourceTranscripts.has(sourceId) && !soloActivitySources.has(sourceId)) {
+                    soloCaptionDisplay?.startCaption();
+                }
+                soloActivitySources.add(sourceId);
+                const sourceText = (soloSourceTranscripts.get(sourceId) || '') + (data.text || '');
+                soloSourceTranscripts.set(sourceId, sourceText);
+                if (!soloTranslations.has(sourceId)) {
+                    showSource(`원문 · ${sourceText}`);
+                    soloCaptionDisplay?.updateCaption('동시 통역 중…', { sourcePreview: true });
+                }
+            } else if (data.type === 'transcript_done') {
+                soloSourceTranscripts.delete(sourceId);
+            } else if (data.type === 'translation_delta') {
+                if (!soloTranslations.has(sourceId)) soloCaptionDisplay?.startCaption();
+                const translatedText = (soloTranslations.get(sourceId) || '') + (data.text || '');
+                soloTranslations.set(sourceId, translatedText);
+                hideSource();
+                soloCaptionDisplay?.updateCaption(translatedText);
+            } else if (data.type === 'translation_done') {
+                const translatedText = soloTranslations.get(sourceId) || '';
+                const completedText = data.caption?.text || translatedText;
+                if (completedText) soloCaptionDisplay?.completeCaption(completedText, data.caption);
+                soloTranslations.delete(sourceId);
+                soloSourceTranscripts.delete(sourceId);
+                soloActivitySources.delete(sourceId);
+                hideSource();
+            } else if (data.type === 'audio_delta') {
+                markTranslationAudioStarted(sourceId);
+                playPcm16(data.audio, data.sample_rate || 24000, sourceId);
+            }
+        }
+
+        function connectSoloInterpreter() {
+            if (isLeaving || currentRole !== 'solo') return;
+            soloReady = false;
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/solo/${encodeURIComponent(soloTargetLanguage)}?transport=pcm16-v1`);
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = () => {
+                setStatus('offline', '초저지연 통역 엔진 준비 중…');
+                clearInterval(heartbeatTimer);
+                const sendQualityPing = () => {
+                    if (ws?.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'quality_ping', sent_at: performance.now() }));
+                    }
+                };
+                sendQualityPing();
+                heartbeatTimer = setInterval(sendQualityPing, 10000);
+            };
+            ws.onmessage = event => {
+                if (event.data instanceof ArrayBuffer) {
+                    if (!soloSwitching) playRealtimePcmFrame(event.data);
+                    return;
+                }
+                let data;
+                try {
+                    data = JSON.parse(event.data);
+                } catch (error) {
+                    return;
+                }
+                if (data.type === 'authenticated') {
+                    soloReady = true;
+                    soloSwitching = false;
+                    clearTimeout(soloSwitchTimer);
+                    setStatus('online', '1인 동시통역 중 · 마이크 켜짐');
+                } else if (data.type === 'language_switched') {
+                    if (data.language !== soloTargetLanguage) return;
+                    clearTimeout(soloSwitchTimer);
+                    soloReady = true;
+                    soloSwitching = false;
+                    document.getElementById('solo_swap_button').disabled = false;
+                    setStatus('online', `${document.getElementById('solo_target_label').innerText} 통역 준비 완료`);
+                } else if (data.type === 'quality_pong') {
+                    const measuredRtt = performance.now() - Number(data.sent_at);
+                    if (Number.isFinite(measuredRtt) && measuredRtt >= 0) {
+                        networkRttMs = Number.isFinite(networkRttMs)
+                            ? (networkRttMs * 0.65) + (measuredRtt * 0.35)
+                            : measuredRtt;
+                        updateQualityBadge();
+                    }
+                } else if (['source_activity', 'transcript_delta', 'transcript_done', 'translation_delta', 'translation_done', 'audio_delta'].includes(data.type)) {
+                    if (!soloSwitching) handleSoloTranslationEvent(data);
+                } else if (data.type === 'engine_status') {
+                    setStatus(data.state || 'online', data.message || 'GPT Realtime 통역 중');
+                } else if (data.type === 'engine_error') {
+                    setStatus('error', data.message || '통역 엔진 오류');
+                }
+            };
+            ws.onclose = () => {
+                clearInterval(heartbeatTimer);
+                soloReady = false;
+                soloSwitching = false;
+                clearTimeout(soloSwitchTimer);
+                document.getElementById('solo_swap_button').disabled = false;
+                if (isLeaving || currentRole !== 'solo') return;
+                setStatus('offline', '연결 끊김 · 자동 재연결 중…');
+                clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(connectSoloInterpreter, 1200);
+            };
+        }
+
+        async function startSoloInterpreter() {
+            const sourceLanguage = document.getElementById('solo_source_lang').value;
+            const targetLanguage = document.getElementById('solo_target_lang').value;
+            const startButton = document.getElementById('solo_start_button');
+            clearFormError('solo');
+            if (sourceLanguage === targetLanguage) {
+                setFormError('solo', '말하는 언어와 들을 언어를 서로 다르게 선택해주세요.');
+                document.getElementById('solo_target_lang').focus();
+                return;
+            }
+
+            primePlaybackContext();
+            startButton.disabled = true;
+            startButton.innerText = '마이크 준비 중…';
+            try {
+                isLeaving = false;
+                isMuted = false;
+                soloSourceLanguage = sourceLanguage;
+                soloTargetLanguage = targetLanguage;
+                soloReady = false;
+                soloSwitching = false;
+                activeSpeakerSourceMode = 'microphone';
+                micStream = await captureSpeakerAudioStream('microphone');
+                micStream.getAudioTracks()[0]?.addEventListener('ended', () => {
+                    if (currentRole !== 'solo' || isLeaving) return;
+                    setStatus('error', '마이크 연결이 종료되었습니다.');
+                    leaveSession('solo');
+                });
+                showSoloActiveUI();
+                setStatus('offline', '1인 통역 연결 중…');
+
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 24000,
+                    latencyHint: 'interactive'
+                });
+                await audioCtx.audioWorklet.addModule('/recorder-worklet.js');
+                const source = audioCtx.createMediaStreamSource(micStream);
+                workletNode = new AudioWorkletNode(audioCtx, 'recorder-processor');
+                workletNode.port.onmessage = event => {
+                    if (soloReady && !soloSwitching && !isMuted && ws?.readyState === WebSocket.OPEN) {
+                        ws.send(event.data.buffer);
+                    }
+                };
+                source.connect(workletNode);
+                const silentGain = audioCtx.createGain();
+                silentGain.gain.value = 0;
+                workletNode.connect(silentGain).connect(audioCtx.destination);
+                if (audioCtx.state === 'suspended') await audioCtx.resume();
+                connectSoloInterpreter();
+            } catch (error) {
+                if (!document.getElementById('active_ui').classList.contains('hidden')) {
+                    await leaveSession('solo');
+                } else {
+                    micStream?.getTracks().forEach(track => track.stop());
+                    micStream = null;
+                    await playbackCtx?.close().catch(() => {});
+                    playbackCtx = null;
+                }
+                const message = error?.name === 'NotAllowedError'
+                    ? '1인 통역을 사용하려면 마이크 권한을 허용해주세요.'
+                    : (error.message || '1인 통역을 시작할 수 없습니다.');
+                setFormError('solo', message);
+            } finally {
+                startButton.disabled = false;
+                startButton.innerText = '1인 통역 시작';
+            }
+        }
+
+        function swapSoloLanguages() {
+            if (currentRole !== 'solo' || soloSwitching) return;
+            [soloSourceLanguage, soloTargetLanguage] = [soloTargetLanguage, soloSourceLanguage];
+            soloSwitching = true;
+            soloReady = false;
+            document.getElementById('solo_swap_button').disabled = true;
+            stopAllScheduledPlayback();
+            initializeSoloCaptions();
+            document.getElementById('subtitle_area').innerText = '언어 방향을 바꾸는 중…';
+            document.getElementById('source_preview_area').classList.add('hidden');
+            updateSoloDirectionUI();
+            setStatus('offline', `${document.getElementById('solo_target_label').innerText} 통역으로 전환 중…`);
+
+            if (ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'switch_language',
+                    language: soloTargetLanguage
+                }));
+                clearTimeout(soloSwitchTimer);
+                soloSwitchTimer = setTimeout(() => {
+                    if (!soloSwitching || currentRole !== 'solo') return;
+                    setStatus('offline', '언어 전환 재연결 중…');
+                    ws?.close();
+                }, 8000);
+            } else {
+                soloSwitching = false;
+                document.getElementById('solo_swap_button').disabled = false;
+                connectSoloInterpreter();
+            }
         }
 
         function connectAudience() {

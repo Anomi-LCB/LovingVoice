@@ -74,7 +74,9 @@ async def health():
         "status": "ok",
         "realtime_available": realtime_hub.available,
         "realtime_model": realtime_hub.model,
+        "general_realtime_model": realtime_hub.general_realtime_model,
         "realtime_mode": "ultra_low_latency_shared",
+        "supported_output_languages": list(LANGUAGE_CODES),
         "active_translation_sessions": realtime_hub.active_session_count,
     }
 
@@ -471,6 +473,194 @@ async def speaker_endpoint(websocket: WebSocket, room_id: str):
             pass
         await audio_queue.put(None)
         logger.info(f"[{room_id}] Speaker cleanup complete.")
+
+@app.websocket("/ws/solo/{lang}")
+async def solo_interpreter_endpoint(websocket: WebSocket, lang: str):
+    """One-device microphone-in / translated-audio-out Realtime session."""
+    await websocket.accept()
+    audio_transport = websocket.query_params.get("transport", "pcm16-v1")
+    if audio_transport != "pcm16-v1":
+        audio_transport = "json"
+    if lang not in LANGUAGE_CODES:
+        await websocket.close(code=4004, reason="Unsupported translation language")
+        return
+    if not realtime_hub.available:
+        await websocket.send_json(
+            {
+                "type": "engine_error",
+                "message": "OPENAI_API_KEY가 설정되지 않았습니다.",
+            }
+        )
+        await websocket.close(code=4003, reason="OpenAI API key is missing")
+        return
+
+    room_id = f"solo-{uuid.uuid4().hex}"
+    source_id = f"solo-{uuid.uuid4().hex}"
+    current_language = lang
+    last_activity_sent_at = 0.0
+    source_was_active = False
+    source_silence_started_at = None
+
+    async def publish_source_activity(pcm16: bytes) -> None:
+        nonlocal last_activity_sent_at, source_was_active, source_silence_started_at
+        now = time.monotonic()
+        if now - last_activity_sent_at < 0.12:
+            return
+        try:
+            samples = memoryview(pcm16).cast("h")[::8]
+            level = (
+                math.sqrt(sum(sample * sample for sample in samples) / len(samples))
+                / 32768
+                if samples
+                else 0.0
+            )
+        except (TypeError, ValueError):
+            level = 0.0
+        active = level >= 0.012
+        should_publish = False
+        if active:
+            source_silence_started_at = None
+            if not source_was_active:
+                source_was_active = True
+                should_publish = True
+        elif source_was_active:
+            if source_silence_started_at is None:
+                source_silence_started_at = now
+            elif now - source_silence_started_at >= 0.36:
+                source_was_active = False
+                source_silence_started_at = None
+                should_publish = True
+        if should_publish:
+            await manager.queue_json_to_room(
+                room_id,
+                {
+                    "type": "source_activity",
+                    "active": source_was_active,
+                    "level": round(min(1.0, level * 5), 2),
+                    "source_id": source_id,
+                },
+            )
+        last_activity_sent_at = now
+
+    await manager.add_audience(
+        room_id,
+        current_language,
+        websocket,
+        accept=False,
+        audio_transport=audio_transport,
+    )
+    try:
+        await realtime_hub.prepare(
+            room_id, source_id, [current_language]
+        )
+        await websocket.send_json(
+            {
+                "type": "authenticated",
+                "mode": "solo",
+                "language": current_language,
+            }
+        )
+        logger.info("Solo interpreter connected: %s", current_language)
+
+        while True:
+            data = await websocket.receive()
+            if data.get("type") == "websocket.disconnect":
+                break
+            if data.get("bytes") is not None:
+                await publish_source_activity(data["bytes"])
+                await realtime_hub.feed(
+                    room_id,
+                    source_id,
+                    data["bytes"],
+                    [current_language],
+                )
+                continue
+            if not data.get("text"):
+                continue
+            try:
+                message = json.loads(data["text"])
+            except ValueError:
+                continue
+            message_type = message.get("type")
+            if message_type == "quality_ping":
+                sent_at = message.get("sent_at")
+                if isinstance(sent_at, (int, float)) and not isinstance(sent_at, bool):
+                    await websocket.send_json(
+                        {"type": "quality_pong", "sent_at": sent_at}
+                    )
+                continue
+            if message_type != "switch_language":
+                continue
+            next_language = str(message.get("language", ""))
+            if next_language not in LANGUAGE_CODES:
+                await websocket.send_json(
+                    {
+                        "type": "engine_error",
+                        "message": "지원하지 않는 통역 언어입니다.",
+                    }
+                )
+                continue
+            if next_language == current_language:
+                await websocket.send_json(
+                    {
+                        "type": "language_switched",
+                        "language": current_language,
+                    }
+                )
+                continue
+
+            previous_language = current_language
+            await manager.add_audience(
+                room_id,
+                next_language,
+                websocket,
+                accept=False,
+                audio_transport=audio_transport,
+            )
+            try:
+                await realtime_hub.prepare(
+                    room_id, source_id, [next_language]
+                )
+            except Exception:
+                manager.remove_audience(
+                    room_id,
+                    next_language,
+                    websocket,
+                    preserve_transport=True,
+                )
+                await realtime_hub.prepare(
+                    room_id, source_id, [previous_language]
+                )
+                raise
+            manager.remove_audience(
+                room_id,
+                previous_language,
+                websocket,
+                preserve_transport=True,
+            )
+            current_language = next_language
+            await websocket.send_json(
+                {
+                    "type": "language_switched",
+                    "language": current_language,
+                }
+            )
+    except WebSocketDisconnect:
+        logger.info("Solo interpreter disconnected: %s", current_language)
+    except Exception as exc:
+        logger.exception("Solo interpreter error")
+        if websocket.client_state.name == "CONNECTED":
+            await websocket.send_json(
+                {
+                    "type": "engine_error",
+                    "message": "1인 통역 연결에 문제가 생겼습니다. 잠시 후 다시 시도해주세요.",
+                }
+            )
+    finally:
+        await realtime_hub.close_speaker(room_id, source_id)
+        manager.remove_audience(room_id, current_language, websocket)
+        manager.subtitle_history.pop(room_id, None)
+
 
 @app.websocket("/ws/audience/{room_id}/{lang}")
 async def audience_endpoint(websocket: WebSocket, room_id: str, lang: str):

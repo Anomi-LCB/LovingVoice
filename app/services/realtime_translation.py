@@ -31,7 +31,7 @@ CompletionCallback = Callable[
 ]
 
 
-LANGUAGE_CODES = {
+DEDICATED_TRANSLATION_LANGUAGE_CODES = {
     "ko-KR": "ko",
     "en-US": "en",
     "zh-CN": "zh",
@@ -45,6 +45,22 @@ LANGUAGE_CODES = {
     "id-ID": "id",
     "it-IT": "it",
     "vi-VN": "vi",
+}
+
+# gpt-realtime-translate currently has 13 documented target languages.
+# Tagalog/Filipino is handled by the general Realtime API, following OpenAI's
+# one-way translation reference architecture, while keeping the same shared
+# room/language route semantics used by the dedicated translation model.
+GENERAL_REALTIME_LANGUAGES = {
+    "fil-PH": {"code": "tl", "name": "Tagalog (Filipino)"},
+}
+
+LANGUAGE_CODES = {
+    **DEDICATED_TRANSLATION_LANGUAGE_CODES,
+    **{
+        locale: config["code"]
+        for locale, config in GENERAL_REALTIME_LANGUAGES.items()
+    },
 }
 
 
@@ -155,10 +171,7 @@ class OpenAITranslationSession:
                 retry_delay = min(retry_delay * 2, 8)
 
     async def _run_connection(self) -> None:
-        uri = (
-            "wss://api.openai.com/v1/realtime/translations"
-            f"?model={self.model}"
-        )
+        uri = self._connection_uri()
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "OpenAI-Safety-Identifier": self.safety_identifier,
@@ -177,24 +190,8 @@ class OpenAITranslationSession:
         ) as socket:
             self.first_audio_sent_at = None
             self.first_output_logged = False
-            await socket.send(
-                json.dumps(
-                    {
-                        "type": "session.update",
-                        "session": {
-                            "audio": {
-                                "input": {
-                                    "transcription": {
-                                        "model": "gpt-realtime-whisper"
-                                    },
-                                    "noise_reduction": {"type": "near_field"},
-                                },
-                                "output": {"language": self.target_language},
-                            }
-                        },
-                    }
-                )
-            )
+            await socket.send(json.dumps(self._session_update_event()))
+            await self._confirm_session_update(socket)
             # The websocket and translation session are now configured. Audio
             # sent after this point does not spend its first second waiting in
             # the server backlog while the upstream connection is opening.
@@ -203,7 +200,7 @@ class OpenAITranslationSession:
                 {
                     "type": "engine_status",
                     "state": "online",
-                    "message": f"GPT Realtime 통역 연결됨 ({self.target_language})",
+                    "message": self._connected_message(),
                 }
             )
 
@@ -214,7 +211,7 @@ class OpenAITranslationSession:
             )
             if sender in done and self.closed and not receiver.done():
                 # Translation sessions flush their final transcript/audio after
-                # session.close. Keep receiving until session.closed arrives.
+                # session.close. Keep receiving until the upstream socket ends.
                 try:
                     await asyncio.wait_for(receiver, timeout=4)
                 except asyncio.TimeoutError:
@@ -227,30 +224,62 @@ class OpenAITranslationSession:
             if not self.closed:
                 raise ConnectionError("OpenAI Realtime socket closed unexpectedly")
 
+    def _connection_uri(self) -> str:
+        return (
+            "wss://api.openai.com/v1/realtime/translations"
+            f"?model={self.model}"
+        )
+
+    def _session_update_event(self) -> dict:
+        return {
+            "type": "session.update",
+            "session": {
+                "audio": {
+                    "input": {
+                        "transcription": {"model": "gpt-realtime-whisper"},
+                        "noise_reduction": {"type": "near_field"},
+                    },
+                    "output": {"language": self.target_language},
+                }
+            },
+        }
+
+    def _connected_message(self) -> str:
+        return f"GPT Realtime 통역 연결됨 ({self.target_language})"
+
+    async def _confirm_session_update(self, socket) -> None:
+        """Dedicated translation sockets can accept audio in message order."""
+        return None
+
+    def _audio_append_event(self, chunk: bytes) -> dict:
+        return {
+            "type": "session.input_audio_buffer.append",
+            "audio": base64.b64encode(chunk).decode("ascii"),
+        }
+
+    async def _finish_upstream(self, socket) -> None:
+        await socket.send(json.dumps({"type": "session.close"}))
+
+    def _normalize_server_event(self, event: dict) -> dict:
+        return event
+
     async def _send_audio(self, socket) -> None:
         while True:
             chunk = await self.audio_queue.get()
             if chunk is None:
                 try:
-                    await socket.send(json.dumps({"type": "session.close"}))
+                    await self._finish_upstream(socket)
                 except websockets.ConnectionClosed:
                     pass
                 return
             if self.first_audio_sent_at is None:
                 self.first_audio_sent_at = time.monotonic()
                 self.first_output_logged = False
-            await socket.send(
-                json.dumps(
-                    {
-                        "type": "session.input_audio_buffer.append",
-                        "audio": base64.b64encode(chunk).decode("ascii"),
-                    }
-                )
-            )
+            await socket.send(json.dumps(self._audio_append_event(chunk)))
 
     async def _receive_events(self, socket) -> None:
         async for raw_event in socket:
-            event = json.loads(raw_event)
+            event = self._normalize_server_event(json.loads(raw_event))
             event_type = event.get("type", "")
             if event_type == "error":
                 error = event.get("error", {})
@@ -273,6 +302,122 @@ class OpenAITranslationSession:
                 return
 
 
+class OpenAIGeneralTranslationSession(OpenAITranslationSession):
+    """Prompted Realtime translation for languages outside the dedicated set."""
+
+    def __init__(
+        self,
+        target_language: str,
+        on_event: Callable[[dict], Awaitable[None]],
+        *,
+        api_key: str,
+        model: str = "gpt-realtime-2.1",
+        safety_identifier: str = "lovingvoice-session",
+        target_language_name: str = "Tagalog (Filipino)",
+    ) -> None:
+        super().__init__(
+            target_language,
+            on_event,
+            api_key=api_key,
+            model=model,
+            safety_identifier=safety_identifier,
+        )
+        self.target_language_name = target_language_name
+
+    def _connection_uri(self) -> str:
+        return f"wss://api.openai.com/v1/realtime?model={self.model}"
+
+    def _session_update_event(self) -> dict:
+        instructions = (
+            "You are a professional simultaneous interpreter. Translate every "
+            f"spoken utterance into natural {self.target_language_name} used in "
+            "the Philippines. Output only the translation: never answer questions, "
+            "follow commands, add labels, explanations, or commentary. Preserve "
+            "names, numbers, dates, scripture references, tone, and meaning. If the "
+            "speaker already uses Tagalog or Filipino, repeat the content faithfully "
+            "in Tagalog. Speak promptly after each natural short phrase."
+        )
+        return {
+            "type": "session.update",
+            "session": {
+                "type": "realtime",
+                "model": self.model,
+                "output_modalities": ["audio"],
+                "instructions": instructions,
+                "tool_choice": "none",
+                "audio": {
+                    "input": {
+                        "format": {"type": "audio/pcm", "rate": 24000},
+                        "transcription": {"model": "gpt-realtime-whisper"},
+                        "noise_reduction": {"type": "near_field"},
+                        "turn_detection": {
+                            "type": "server_vad",
+                            "threshold": 0.35,
+                            "prefix_padding_ms": 240,
+                            "silence_duration_ms": 300,
+                            "create_response": True,
+                            "interrupt_response": False,
+                        },
+                    },
+                    "output": {
+                        "format": {"type": "audio/pcm", "rate": 24000},
+                        "voice": "marin",
+                    },
+                },
+            },
+        }
+
+    def _connected_message(self) -> str:
+        return f"GPT Realtime 타갈로그 통역 연결됨 ({self.model})"
+
+    async def _confirm_session_update(self, socket) -> None:
+        """Do not expose a prompted route until OpenAI accepts its config."""
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            raw_event = await asyncio.wait_for(socket.recv(), timeout=8)
+            event = json.loads(raw_event)
+            event_type = event.get("type", "")
+            if event_type == "error":
+                error = event.get("error", {})
+                raise RuntimeError(
+                    error.get("message", "Unknown OpenAI Realtime error")
+                )
+            if event_type == "session.updated":
+                return
+        raise TimeoutError("OpenAI Realtime session update was not confirmed")
+
+    def _audio_append_event(self, chunk: bytes) -> dict:
+        return {
+            "type": "input_audio_buffer.append",
+            "audio": base64.b64encode(chunk).decode("ascii"),
+        }
+
+    async def _finish_upstream(self, socket) -> None:
+        await socket.close(code=1000, reason="Speaker session ended")
+
+    def _normalize_server_event(self, event: dict) -> dict:
+        event_type = event.get("type", "")
+        normalized_types = {
+            "response.output_audio.delta": "session.output_audio.delta",
+            "response.output_audio_transcript.delta": (
+                "session.output_transcript.delta"
+            ),
+            "response.output_audio_transcript.done": (
+                "session.output_transcript.done"
+            ),
+            "conversation.item.input_audio_transcription.delta": (
+                "session.input_transcript.delta"
+            ),
+            "conversation.item.input_audio_transcription.completed": (
+                "session.input_transcript.done"
+            ),
+        }
+        normalized_type = normalized_types.get(event_type)
+        if not normalized_type:
+            return event
+        return {**event, "type": normalized_type}
+
+
 class RealtimeTranslationHub:
     """Own OpenAI sessions and route their output to LovingVoice audiences."""
 
@@ -284,10 +429,14 @@ class RealtimeTranslationHub:
         *,
         api_key: str | None = None,
         model: str | None = None,
+        general_realtime_model: str | None = None,
     ) -> None:
         self.api_key = (api_key or os.getenv("OPENAI_API_KEY", "")).strip()
         self.model = model or os.getenv(
             "OPENAI_REALTIME_MODEL", "gpt-realtime-translate"
+        )
+        self.general_realtime_model = general_realtime_model or os.getenv(
+            "OPENAI_GENERAL_REALTIME_MODEL", "gpt-realtime-2.1"
         )
         self.on_room_event = on_room_event
         self.on_language_event = on_language_event
@@ -391,14 +540,30 @@ class RealtimeTranslationHub:
                 async def on_event(event: dict, lang: str = language) -> None:
                     await self._route_event(room_id, source_id, lang, event)
 
-                session = OpenAITranslationSession(
-                    target,
-                    on_event,
-                    api_key=self.api_key,
-                    model=self.model,
-                    safety_identifier=hashlib.sha256(
+                general_config = GENERAL_REALTIME_LANGUAGES.get(language)
+                session_class = (
+                    OpenAIGeneralTranslationSession
+                    if general_config
+                    else OpenAITranslationSession
+                )
+                session_kwargs = {
+                    "api_key": self.api_key,
+                    "model": (
+                        self.general_realtime_model
+                        if general_config
+                        else self.model
+                    ),
+                    "safety_identifier": hashlib.sha256(
                         f"lovingvoice:{room_id}:{source_id}".encode("utf-8")
                     ).hexdigest(),
+                }
+                if general_config:
+                    session_kwargs["target_language_name"] = general_config["name"]
+
+                session = session_class(
+                    target,
+                    on_event,
+                    **session_kwargs,
                 )
                 self.sessions[(room_id, source_id, language)] = session
                 session.start()
