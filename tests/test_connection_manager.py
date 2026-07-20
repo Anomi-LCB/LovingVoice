@@ -208,6 +208,43 @@ async def test_realtime_fanout_does_not_block_on_slow_audience():
 
 
 @pytest.mark.asyncio
+async def test_realtime_audio_fanout_never_drops_ordered_pcm_deltas():
+    import asyncio
+
+    manager = ConnectionManager()
+    manager.realtime_fanout_queue_size = 4
+    gate = asyncio.Event()
+    audience = SlowAudience(gate)
+    await manager.add_audience("room", "en-US", audience)
+    events = [
+        {
+            "type": "audio_delta",
+            "audio": f"ordered-chunk-{index}",
+            "source_id": "speaker",
+        }
+        for index in range(12)
+    ]
+
+    async def produce_audio():
+        for event in events:
+            await manager.queue_json_to_language("room", "en-US", event)
+
+    producer = asyncio.create_task(produce_audio())
+    await asyncio.sleep(0.02)
+    assert not producer.done()
+
+    gate.set()
+    await asyncio.wait_for(producer, timeout=1)
+    for _ in range(50):
+        if len(audience.messages) == len(events):
+            break
+        await asyncio.sleep(0.01)
+
+    assert audience.messages == events
+    await manager.close_realtime_fanout()
+
+
+@pytest.mark.asyncio
 async def test_speaker_caption_route_exists_before_any_audience_joins():
     manager = ConnectionManager()
 

@@ -105,3 +105,11 @@ def test_solo_ui_has_single_device_controls_and_language_swap():
     assert "/ws/solo/${encodeURIComponent(soloTargetLanguage)}" in html
     assert "echoCancellation: true" in html
     assert "while (history.childElementCount > AUDIENCE_HISTORY_MAX_ITEMS)" in html
+
+    playback_function = html.split("function playPcm16Bytes(", 1)[1].split(
+        "async function startSpeaker()", 1
+    )[0]
+    assert "kind === 'source'" in playback_function
+    assert "SOURCE_ASSIST_MAX_QUEUE_SECONDS" in playback_function
+    translation_path = playback_function.split("kind === 'source'", 1)[0]
+    assert "source.stop()" not in translation_path

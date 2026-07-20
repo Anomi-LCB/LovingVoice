@@ -601,6 +601,7 @@
         let sourceAssistGainNode;
         let playbackUnlockCleanup = null;
         let playbackBlockedNoticeShown = false;
+        let playbackPrimed = false;
         let sourceAssistEnabled = false;
         let sourceAssistRestoreTimer = null;
         let translationAudioActiveUntil = 0;
@@ -654,7 +655,10 @@
         const AUDIENCE_HISTORY_MAX_ITEMS = 20;
         const RECORDING_TRANSCRIPT_GRACE_MS = 1600;
         const PLAYBACK_START_LEAD_SECONDS = 0.008;
-        const PLAYBACK_MAX_QUEUE_SECONDS = 0.45;
+        // Raw source assist may skip ahead when it falls behind. Translated
+        // audio is an ordered delta stream: dropping even one queued buffer
+        // removes words, so translation buffers must always play in full.
+        const SOURCE_ASSIST_MAX_QUEUE_SECONDS = 0.45;
 
         function updateSpeakerInputUI() {
             const mode = document.getElementById('speaker_audio_source')?.value || 'microphone';
@@ -1665,6 +1669,7 @@
                 await playbackCtx.close().catch(() => {});
                 playbackCtx = null;
             }
+            playbackPrimed = false;
             translationGainNode = null;
             sourceAssistGainNode = null;
             clearTimeout(sourceAssistRestoreTimer);
@@ -1808,6 +1813,7 @@
                     sampleRate: 24000,
                     latencyHint: 'interactive'
                 });
+                playbackPrimed = false;
             }
             ensurePlaybackGraph(playbackCtx);
             if (playbackCtx.state === 'suspended') {
@@ -1819,13 +1825,16 @@
                     playbackUnlockCleanup?.();
                 }).catch(() => installPlaybackUnlockFallback());
             }
-            try {
-                const silence = playbackCtx.createBuffer(1, 1, playbackCtx.sampleRate);
-                const source = playbackCtx.createBufferSource();
-                source.buffer = silence;
-                source.connect(playbackCtx.destination);
-                source.start();
-            } catch (error) {}
+            if (!playbackPrimed) {
+                try {
+                    const silence = playbackCtx.createBuffer(1, 1, playbackCtx.sampleRate);
+                    const source = playbackCtx.createBufferSource();
+                    source.buffer = silence;
+                    source.connect(playbackCtx.destination);
+                    source.start();
+                    playbackPrimed = true;
+                } catch (error) {}
+            }
             return playbackCtx;
         }
 
@@ -1895,7 +1904,10 @@
             let scheduled = (scheduledPlaybackSources.get(sourceId) || [])
                 .filter(item => item.endTime > now);
             let nextTime = nextPlaybackTimes.get(sourceId) || 0;
-            if (nextTime - now > PLAYBACK_MAX_QUEUE_SECONDS) {
+            if (
+                kind === 'source'
+                && nextTime - now > SOURCE_ASSIST_MAX_QUEUE_SECONDS
+            ) {
                 let currentAudioEnd = now;
                 scheduled.forEach(item => {
                     if (item.startTime > now + 0.005) {
@@ -1914,9 +1926,12 @@
                 nextTime = now + PLAYBACK_START_LEAD_SECONDS;
             }
             const queuedAhead = Math.max(0, nextTime - now);
-            const playbackRate = queuedAhead > 0.32
-                ? 1.05
-                : (queuedAhead > 0.18 ? 1.025 : 1);
+            // Keep every translated PCM delta and catch up gently instead of
+            // deleting future buffers. A small rate adjustment is much less
+            // noticeable than missing words and preserves sentence continuity.
+            const playbackRate = queuedAhead > 0.8
+                ? 1.08
+                : (queuedAhead > 0.35 ? 1.05 : (queuedAhead > 0.15 ? 1.025 : 1));
             source.playbackRate.value = playbackRate;
             const effectiveDuration = buffer.duration / playbackRate;
             const scheduledItem = {

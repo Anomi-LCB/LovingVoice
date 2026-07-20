@@ -42,7 +42,7 @@ class ConnectionManager:
             200, int(os.getenv("SUBTITLE_HISTORY_ITEM_MAX_CHARS", "2000"))
         )
         self.realtime_fanout_queue_size = max(
-            4, min(64, int(os.getenv("REALTIME_FANOUT_QUEUE_SIZE", "8")))
+            8, min(256, int(os.getenv("REALTIME_FANOUT_QUEUE_SIZE", "64")))
         )
         self.realtime_send_timeout = max(
             0.1, min(2.0, float(os.getenv("REALTIME_SEND_TIMEOUT_SECONDS", "0.35")))
@@ -252,17 +252,8 @@ class ConnectionManager:
         if send_tasks:
             await asyncio.gather(*send_tasks, return_exceptions=True)
 
-    @staticmethod
-    def _put_latest(queue, data):
-        if queue.full():
-            try:
-                queue.get_nowait()
-            except asyncio.QueueEmpty:
-                pass
-        queue.put_nowait(dict(data))
-
     async def queue_json_to_room(self, room_id, data):
-        """Queue realtime room events so listener fan-out never blocks OpenAI."""
+        """Queue every ordered room event without deleting transcript deltas."""
         room_id = self.resolve_room_id(room_id)
         queue = self._room_event_queues.get(room_id)
         if queue is None:
@@ -271,7 +262,7 @@ class ConnectionManager:
             self._room_event_workers[room_id] = asyncio.create_task(
                 self._room_fanout_worker(room_id, queue)
             )
-        self._put_latest(queue, data)
+        await queue.put(dict(data))
 
     async def queue_json_to_language(self, room_id, lang, data):
         """Queue one shared realtime stream per room/language route."""
@@ -284,7 +275,10 @@ class ConnectionManager:
             self._language_event_workers[key] = asyncio.create_task(
                 self._language_fanout_worker(room_id, lang, queue)
             )
-        self._put_latest(queue, data)
+        # Realtime audio and transcript deltas are consecutive pieces of one
+        # ordered stream. Dropping any queue entry can remove spoken words or
+        # reorder the completion event, so apply backpressure instead.
+        await queue.put(dict(data))
 
     async def queue_source_audio_to_room(
         self, room_id, pcm16, source_id, sample_rate=24000
