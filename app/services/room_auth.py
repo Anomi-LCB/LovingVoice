@@ -68,8 +68,10 @@ class RoomTokenManager:
             return True
 
         # Transitional compatibility for manually entered room codes. The
-        # password now travels inside TLS/WebSocket data, never in the URL.
-        configured_password = os.getenv("SPEAKER_PASSWORD", "loving77")
+        # password travels inside TLS/WebSocket data, never in the URL. There
+        # is deliberately no built-in fallback password: operators must set
+        # SPEAKER_PASSWORD explicitly while this legacy path remains enabled.
+        configured_password = os.getenv("SPEAKER_PASSWORD", "")
         supplied_password = str(message.get("password", ""))
         return bool(configured_password) and hmac.compare_digest(
             supplied_password, configured_password
