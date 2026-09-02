@@ -26,3 +26,15 @@ def test_legacy_password_is_supported_without_using_url(monkeypatch):
     assert not manager.authenticate(
         "room", {"type": "authenticate", "password": "wrong"}
     )
+
+
+def test_legacy_password_has_no_insecure_default(monkeypatch):
+    monkeypatch.delenv("SPEAKER_PASSWORD", raising=False)
+    manager = RoomTokenManager(secret="token-secret")
+
+    assert not manager.authenticate(
+        "room", {"type": "authenticate", "password": "loving77"}
+    )
+    assert not manager.authenticate(
+        "room", {"type": "authenticate", "password": ""}
+    )
